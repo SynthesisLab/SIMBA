@@ -1,2 +1,1 @@
-# SIMBA
-SImple MBA expression learning
+# 🦁 SIMBA :  SImple MBA expression learning

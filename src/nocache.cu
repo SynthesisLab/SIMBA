@@ -2,11 +2,9 @@
 #include "mba.cuh"
 #include "utils.h"
 #include <cassert>
-#include <chrono>
 #include <cstdint>
 #include <fmt/core.h>
 #include <stack>
-#include <string>
 #include <vector>
 
 inline cudaError_t checkCuda(cudaError_t res) {
@@ -169,29 +167,29 @@ std::vector<uint64_t> compute_n_formulas(int max_size, int n_variables) {
   return numForm;
 }
 
-std::string MBAToString(const char *MBAFormula) {
-  std::stack<std::string> stack;
+string MBAToString(const char *MBAFormula) {
+  stack<string> stack;
   for (int i = 0; MBAFormula[i] != '\0'; ++i) {
     char token = MBAFormula[i];
 
     if (token >= '0' && token <= '9') {
-      stack.push("v" + std::string(1, token));
+      stack.push("v" + string(1, token));
     } else {
       if (token == '~' || token == '#') {
         if (!stack.empty()) {
-          std::string operand = stack.top();
+          string operand = stack.top();
           stack.pop();
-          std::string op = (token == '#') ? "-" : "~";
+          string op = (token == '#') ? "-" : "~";
           stack.push("(" + op + operand + ")");
         }
       } else {
         if (stack.size() < 2)
           return "Error : Incorrect formula.\n";
-        std::string right = stack.top();
+        string right = stack.top();
         stack.pop();
-        std::string left = stack.top();
+        string left = stack.top();
         stack.pop();
-        stack.push("(" + left + " " + std::string(1, token) + " " + right + ")");
+        stack.push("(" + left + " " + string(1, token) + " " + right + ")");
       }
     }
   }
@@ -203,7 +201,7 @@ std::string MBAToString(const char *MBAFormula) {
 
 class NoCache {
 public:
-  static std::string solve(const MbaInstance &mba, const int max_size) {
+  static string solve(const MbaInstance &mba, const int max_size) {
     if (max_size > maxFormulaSize) {
       throw fmt::format("This version supports formulas of size at most {}",
                         maxFormulaSize);
@@ -280,7 +278,7 @@ public:
       }
     }
 
-    std::string output;
+    string output;
 
     if (res[0] != '\0') {
       output = MBAToString(res);

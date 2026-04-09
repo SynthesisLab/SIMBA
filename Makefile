@@ -3,29 +3,36 @@ NVCC := nvcc
 CXX  := g++
 
 # Flags
-NVCC_FLAGS := -O3 -std=c++17
-CXX_FLAGS  := -O3 -std=c++17
+DEPFLAGS := -MMD -MP
+NVCC_FLAGS := -O3 -std=c++17 -Iincludes --extended-lambda
+CXX_FLAGS  := -O3 -std=c++17 -Wall -Wextra
 LIBS       := -lfmt
 
-# Target names
-TARGET := simba
-OBJS   := src/nocache.o src/utils.o
+CPPS := $(wildcard src/*.cpp)
+CUS := $(wildcard src/*.cu)
 
-all: $(TARGET)
+OBJS := $(CPPS:.cpp=.o) $(CUS:.cu=.o)
+DEPS := $(OBJS:.o=.d)
 
-# Link the final executable
-$(TARGET): $(OBJS)
-	$(NVCC) $(OBJS) -o $(TARGET) $(LIBS)
+# all: simba_nocache
+all: simba_lightcache
 
-# Compile CUDA source
-src/nocache.o: src/nocache.cu src/globals.cuh src/mba.cuh src/utils.h
-	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
+simba_nocache: src/nocache.o src/instance.o
+	$(NVCC) $^ -o $@ $(LIBS)
 
-# Compile C++ source (This bypasses the std::function error)
-src/utils.o: src/utils.cpp src/utils.h
-	$(CXX) $(CXX_FLAGS) -c $< -o $@
+simba_lightcache: src/light_cache.o src/instance.o
+	$(NVCC) $^ -o $@ $(LIBS)
+
+%.o: %.cu
+	$(NVCC) $(DEPFLAGS) $(NVCC_FLAGS) -c $< -o $@
+
+%.o: %.cpp
+	$(CXX) $(DEPFLAGS) $(CXX_FLAGS) -c $< -o $@
+
+-include $(DEPS)
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS)
+	rm -f $(DEPS)
 
 .PHONY: all clean

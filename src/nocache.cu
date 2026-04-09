@@ -1,21 +1,12 @@
 #include "globals.cuh"
+#include "instance.h"
 #include "mba.cuh"
-#include "utils.h"
+#include "utils.cuh"
 #include <cassert>
 #include <cstdint>
 #include <fmt/core.h>
 #include <stack>
 #include <vector>
-
-inline cudaError_t checkCuda(cudaError_t res) {
-#ifndef MEASUREMENT_MODE
-  if (res != cudaSuccess) {
-    fprintf(stderr, "CUDA Runtime Error: %s\n", cudaGetErrorString(res));
-    assert(res == cudaSuccess);
-  }
-#endif
-  return res;
-}
 
 struct StackEntry {
   uint64_t n;
@@ -167,29 +158,30 @@ std::vector<uint64_t> compute_n_formulas(int max_size, int n_variables) {
   return numForm;
 }
 
-string MBAToString(const char *MBAFormula) {
-  stack<string> stack;
+std::string MBAToString(const char *MBAFormula) {
+  std::stack<std::string> stack;
   for (int i = 0; MBAFormula[i] != '\0'; ++i) {
     char token = MBAFormula[i];
 
     if (token >= '0' && token <= '9') {
-      stack.push("v" + string(1, token));
+      stack.push("v" + std::string(1, token));
     } else {
       if (token == '~' || token == '#') {
         if (!stack.empty()) {
-          string operand = stack.top();
+          std::string operand = stack.top();
           stack.pop();
-          string op = (token == '#') ? "-" : "~";
+          std::string op = (token == '#') ? "-" : "~";
           stack.push("(" + op + operand + ")");
         }
       } else {
         if (stack.size() < 2)
           return "Error : Incorrect formula.\n";
-        string right = stack.top();
+        std::string right = stack.top();
         stack.pop();
-        string left = stack.top();
+        std::string left = stack.top();
         stack.pop();
-        stack.push("(" + left + " " + string(1, token) + " " + right + ")");
+        stack.push("(" + left + " " + std::string(1, token) + " " + right +
+                   ")");
       }
     }
   }
@@ -201,7 +193,7 @@ string MBAToString(const char *MBAFormula) {
 
 class NoCache {
 public:
-  static string solve(const MbaInstance &mba, const int max_size) {
+  static std::string solve(const MbaInstance &mba, const int max_size) {
     if (max_size > maxFormulaSize) {
       throw fmt::format("This version supports formulas of size at most {}",
                         maxFormulaSize);
@@ -278,7 +270,7 @@ public:
       }
     }
 
-    string output;
+    std::string output;
 
     if (res[0] != '\0') {
       output = MBAToString(res);
@@ -313,7 +305,7 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  string file_name = argv[1];
+  std::string file_name = argv[1];
   auto mba = MbaInstance::from_json_file(file_name);
   int max_size = atoi(argv[2]);
 
@@ -325,7 +317,7 @@ int main(int argc, char *argv[]) {
   auto start = chrono::high_resolution_clock::now();
 #endif
 
-  string output = NoCache::solve(mba, max_size);
+  std::string output = NoCache::solve(mba, max_size);
   if (output == "see_the_error")
     return 0;
 

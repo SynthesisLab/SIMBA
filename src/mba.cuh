@@ -6,11 +6,11 @@
 __device__ bool is_solution_rpn(char *formula, int formula_size,
                                 int num_examples, int num_variables) {
   uint32_t stack[maxFormulaSize];
-  int stackIdx;
+  int stack_index;
 
   for (int i = 0; i < num_examples; ++i) {
 
-    stackIdx = -1;
+    stack_index = -1;
 
     for (int j = 0; j < formula_size; ++j) {
 
@@ -19,42 +19,42 @@ __device__ bool is_solution_rpn(char *formula, int formula_size,
       if (token >= '0' && token <= '9') {
         // Variables
         int var = token - '0';
-        stack[++stackIdx] = d_inputs[i * num_variables + var];
+        stack[++stack_index] = d_inputs[i * num_variables + var];
       } else {
         uint32_t left, right;
         if (token == '~' || token == '#') {
           // Unary operators
-          left = stack[stackIdx];
+          left = stack[stack_index];
           switch (token) {
           case '~':
-            stack[stackIdx] = ~left;
+            stack[stack_index] = ~left;
             break;
           case '#':
-            stack[stackIdx] = -left;
+            stack[stack_index] = -left;
             break;
           }
         } else {
           // Binary operators
-          right = stack[stackIdx--];
-          left = stack[stackIdx];
+          right = stack[stack_index--];
+          left = stack[stack_index];
           switch (token) {
           case '&':
-            stack[stackIdx] = left & right;
+            stack[stack_index] = left & right;
             break;
           case '|':
-            stack[stackIdx] = left | right;
+            stack[stack_index] = left | right;
             break;
           case '^':
-            stack[stackIdx] = left ^ right;
+            stack[stack_index] = left ^ right;
             break;
           case '+':
-            stack[stackIdx] = left + right;
+            stack[stack_index] = left + right;
             break;
           case '-':
-            stack[stackIdx] = left - right;
+            stack[stack_index] = left - right;
             break;
           case '*':
-            stack[stackIdx] = left * right;
+            stack[stack_index] = left * right;
             break;
           }
         }
@@ -66,6 +66,68 @@ __device__ bool is_solution_rpn(char *formula, int formula_size,
   }
 
   return true;
+}
+
+__device__ uint32_t evaluateRPN(char *formula, int sample_index,
+                                int num_variables) {
+
+  uint32_t stack[maxFormulaSize];
+  int stack_index = -1; // Index of the top of the stack.
+
+  int idx = 0;
+  char token;
+  while ((token = formula[idx++]) != '\0') {
+    if (token >= '0' && token <= '9') {
+      int var = token - '0';
+      stack[++stack_index] = d_inputs[sample_index * num_variables + var];
+    } else {
+      uint32_t left, right;
+      if (token == '~' || token == '#') {
+        left = stack[stack_index];
+        if (token == '~')
+          stack[stack_index] = ~left;
+        else
+          stack[stack_index] = -left;
+      } else {
+        right = stack[stack_index--];
+        left = stack[stack_index];
+        switch (token) {
+        case '&':
+          stack[stack_index] = left & right;
+          break;
+        case '|':
+          stack[stack_index] = left | right;
+          break;
+        case '^':
+          stack[stack_index] = left ^ right;
+          break;
+        case '<':
+          stack[stack_index] = left << right;
+          break;
+        case '>':
+          stack[stack_index] = left >> right;
+          break;
+        case '+':
+          stack[stack_index] = left + right;
+          break;
+        case '-':
+          stack[stack_index] = left - right;
+          break;
+        case '*':
+          stack[stack_index] = left * right;
+          break;
+        case '/':
+          stack[stack_index] = left / right;
+          break;
+        case '%':
+          stack[stack_index] = left % right;
+          break;
+        }
+      }
+    }
+  }
+
+  return stack[0];
 }
 
 #endif

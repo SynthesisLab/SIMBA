@@ -1,10 +1,10 @@
-#include "utils.h"
+#include "instance.h"
 #include "json.hpp"
 
 using json = nlohmann::json;
 
 // Reads a json-formatted MBA instance for `is` into `mba`.
-istream &operator>>(istream &is, MbaInstance &mba) {
+std::istream &operator>>(std::istream &is, MbaInstance &mba) {
   json j;
   is >> j;
 

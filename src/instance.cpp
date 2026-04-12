@@ -3,7 +3,7 @@
 
 using json = nlohmann::json;
 
-// Reads a json-formatted MBA instance for `is` into `mba`.
+// Reads a json-formatted MBA instance from `is` into `mba`.
 std::istream &operator>>(std::istream &is, MbaInstance &mba) {
   json j;
   is >> j;

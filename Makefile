@@ -1,45 +1,41 @@
-CXX      := c++
-CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -Isrc
+# Compilers
+NVCC := nvcc
+CXX  := g++
 
-# CUDA / nvcc settings.
-# Adjust WARPCORE_DIR to point to your warpcore installation.
-NVCC       := nvcc
-NVCCFLAGS  := -std=c++17 -Iinclude -Isrc
-WARPCORE_DIR ?= $(HOME)/warpcore
-NVCCFLAGS  += -I$(WARPCORE_DIR)/include
+# Flags
+DEPFLAGS := -MMD -MP
+NVCC_FLAGS := -O3 -std=c++17 -Iinclude --extended-lambda
+CXX_FLAGS  := -O3 -std=c++17 -Iinclude -Wall -Wextra
+LIBS       := -lfmt
 
-JSON_URL := https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp
-JSON_HDR := include/nlohmann/json.hpp
+CPPS := $(wildcard src/*.cpp)
+CUS  := $(wildcard src/*.cu)
+BINS_SRC := $(wildcard bin/*.cu)
+BINS := $(BINS_SRC:bin/%.cu=%)
 
-TEST_SRC       := src/test_utils.cpp
-TEST_BIN       := build/test_utils
+OBJS := $(CPPS:.cpp=.o) $(CUS:.cu=.o)
+DEPS := $(OBJS:.o=.d)
 
-FULLCACHE_SRC  := src/full-cache.cu
-FULLCACHE_BIN  := build/full-cache
 
-.PHONY: all test test-full-cache clean
+all: $(BINS)
 
-all: $(TEST_BIN) $(FULLCACHE_BIN)
+%: bin/%.o $(OBJS)
+	$(NVCC) $^ -o $@ $(LIBS)
 
-# Download nlohmann/json single-header if not present
-$(JSON_HDR):
-	@mkdir -p $(dir $@)
-	@echo "Downloading nlohmann/json → $@"
-	curl -fsSL $(JSON_URL) -o $@
+%.o: %.cu
+	$(NVCC) $(DEPFLAGS) $(NVCC_FLAGS) -c $< -o $@
 
-$(TEST_BIN): $(TEST_SRC) src/utils.h $(JSON_HDR)
-	@mkdir -p build
-	$(CXX) $(CXXFLAGS) -o $@ $(TEST_SRC)
+%.o: %.cpp
+	$(CXX) $(DEPFLAGS) $(CXX_FLAGS) -c $< -o $@
 
-$(FULLCACHE_BIN): $(FULLCACHE_SRC) src/utils.h $(JSON_HDR)
-	@mkdir -p build
-	$(NVCC) $(NVCCFLAGS) -o $@ $(FULLCACHE_SRC)
-
-test: $(TEST_BIN)
-	./$(TEST_BIN) benchmarks/test.json
-
-test-full-cache: $(FULLCACHE_BIN)
-	./$(FULLCACHE_BIN) benchmarks/test.json 5
+-include $(DEPS)
 
 clean:
-	rm -rf build include
+	$(RM) -f $(OBJS)
+	$(RM) -f $(DEPS)
+	$(RM) -rf build/*
+
+mrproper: clean
+	$(RM) $(BINS)
+
+.PHONY: all clean mrproper

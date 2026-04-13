@@ -11,7 +11,7 @@ VARIABLES_REGEX = re.compile(r"v(\d+)")
 
 def _count_variables(formula: str) -> int:
     matches = VARIABLES_REGEX.findall(formula)
-    return max(int(i) for i in matches) + 1
+    return max((int(i) for i in matches), default=0) + 1
 
 
 class Sampler:
@@ -41,8 +41,8 @@ class MbaExpr:
 
 def example_to_json(inputs: tuple[np.uint32, ...], output: np.uint32) -> dict[str, Any]:
     return {
-        "inputs": {i: {"value": int(x), "size": 32} for i, x in enumerate(inputs)},
-        "outputs": {0: {"value": int(output), "size": 32}},
+        "inputs": [{"value": int(x), "size": 32} for x in inputs],
+        "outputs": [{"value": int(output), "size": 32}],
     }
 
 
@@ -56,6 +56,8 @@ def sample_formula(formula: str, n_examples: int, sampler: Sampler) -> dict[str,
 
     res = {
         "original_formula": formula,
+        "num_variables": expr.n_vars,
+        "num_examples": n_examples,
         "examples": [example_to_json(i, o) for i, o in examples],
     }
 

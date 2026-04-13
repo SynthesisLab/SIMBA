@@ -1,6 +1,7 @@
 #include "globals.cuh"
 #include "instance.h"
 #include "mba.cuh"
+#include "mba_ops.cuh"
 #include "utils.cuh"
 #include <cassert>
 #include <cstdint>
@@ -11,7 +12,7 @@
 struct StackEntry {
   uint64_t n;
   int size;
-  // int shift;
+  int shift;
 };
 
 __device__ void printFormula(int size, char formula[max_formula_size]) {
@@ -26,8 +27,8 @@ __host__ __device__ void numberToFormula(uint64_t n, int size,
 
   StackEntry stack[max_formula_size];
   int shift = 0;
-  stack[0] = {n, size};
-  // stack[0] = {n, size, shift};
+  // stack[0] = {n, size};
+  stack[0] = {n, size, shift};
   int stackIdx = 0;
 
   uint64_t opPartsum;
@@ -95,7 +96,7 @@ __global__ void processOperator(const int n_examples, const int n_variables,
     tid += offset;
 
     char formula[max_formula_size];
-    numberToFormula(tid, formula_size, formula);
+    numberToFormula<ReducedOps>(tid, formula_size, formula);
     bool found =
         is_solution_rpn(formula, formula_size, n_examples, n_variables);
 
@@ -248,11 +249,11 @@ public:
 
         N = numForm[formula_size * 9 + i];
         blockSize = (N + 1023) / 1024;
-#ifndef MEASUREMENT_MODE
-        printf(
-            "Length %-2d | %-5s | CheckedMBAs: %-13lu | ToBeChecked: %-12lu \n",
-            formula_size, opStr[i], allMBAs, N);
-#endif
+        // #ifndef MEASUREMENT_MODE
+        //         printf(
+        //             "Length %-2d | %-5s | CheckedMBAs: %-13lu | ToBeChecked:
+        //             %-12lu \n", formula_size, opStr[i], allMBAs, N);
+        // #endif
         if (N > 0)
           processOperator<<<blockSize, 1024>>>(mba.n_examples, mba.n_variables,
                                                formula_size, offset, N, d_res);

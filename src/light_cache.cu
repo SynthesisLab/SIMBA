@@ -101,7 +101,7 @@ __device__ void insertInCache(uint32_t *CS, bool CSUniq, int tid, int ldx,
       d_temp_MBACache[tid * len + i] = d_MBACache[ldx + i];
     for (int i = 0; i < rlen - 1; ++i)
       d_temp_MBACache[tid * len + i + llen - 1] = d_MBACache[rdx + i];
-    d_temp_MBACache[tid * len + len - 2] = Op::char_representation;
+    d_temp_MBACache[tid * len + len - 2] = Op::unique_char;
     d_temp_MBACache[tid * len + len - 1] = '\0';
 
     bool found = true;

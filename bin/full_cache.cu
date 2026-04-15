@@ -4,24 +4,20 @@
 // Uncomment to suppress all progress output and enable timing.
 // #define MEASUREMENT_MODE
 
-#include <iterator>
 #ifdef MEASUREMENT_MODE
 #include <chrono>
 #endif
 
+#include "compat.h"
 #include "cs_cache.cuh"
 #include "globals.cuh"
 #include "instance.h"
 #include "mba_ops.cuh"
 
-#include <algorithm> // std::min
 #include <cassert>
 #include <climits> // INT_MAX
 #include <cstdint>
 #include <cstdio>
-#include <fmt/core.h>
-#include <map>
-#include <memory> // std::unique_ptr / std::make_unique
 #include <string>
 
 #include <warpcore/hash_set.cuh>
@@ -96,6 +92,11 @@ bool process_operator(const int left_start_index, const int left_end_index,
                       const int right_start_index, const int right_end_index,
                       const int n_examples, MCsCache &cache) {
 
+#ifndef MEASUREMENT_MODE
+  printf(" (%c) | StoredMBAs: %-10lu | ", Op::char_representation,
+         cache.get_size());
+#endif
+
   constexpr bool isUnary = !Op::is_binary;
 
   const int n_formulas_left = left_end_index - left_start_index + 1;
@@ -140,22 +141,14 @@ class FullCache {
 public:
   static string solve(const MbaInstance &mba, const int max_search_size) {
     if (mba.n_examples > max_n_examples) {
-      throw fmt::format("This version supports at most {} examples.",
-                        max_n_examples);
+      throw compat_fmt::format("This version supports at most {} examples.",
+                               max_n_examples);
     }
 
     // Copy outputs into constant memory so every thread can read them cheaply.
     checkCuda(cudaMemcpyToSymbol(d_outputs, mba.outputs.data(),
                                  mba.outputs.size() * sizeof(uint32_t)));
 
-    uint64_t allMBAs{}; // total number of formulas considered
-    int lastIdx{};      // first free row in the permanent device cache
-
-#ifndef MEASUREMENT_MODE
-    printf("Length %-2d | (V)   | AllMBAs: %-11lu | StoredMBAs: %-10d | "
-           "ToBeChecked: %-10d \n",
-           1, allMBAs, 0, mba.n_variables);
-#endif
     // ------------------------------------
     // Memory allocation and initialisation
     // ------------------------------------
@@ -187,7 +180,9 @@ public:
         if (right_size < left_size)
           break;
 
-        done = process_operators<And>(
+        /// TODO: separate unary and binary operators?
+        done = process_operators<Not, And, Or, Xor, LShift, RShift, Neg, Add,
+                                 Sub, Mul, Div, Mod>(
             start_index[left_size - 1], start_index[left_size],
             start_index[right_size - 1], start_index[right_size],
             mba.n_examples, cache);

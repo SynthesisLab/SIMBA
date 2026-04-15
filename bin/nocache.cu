@@ -58,7 +58,7 @@ __host__ __device__ void numberToFormula(uint64_t n, int size,
       n -= opPartsum;
 
       size--;
-      formula[shift + size] = OpGroup::char_representation[opIdx];
+      formula[shift + size] = OpGroup::unique_char[opIdx];
 
       if (opIdx == 0 || opIdx == 4)
         stack[++stackIdx] = {n, size};

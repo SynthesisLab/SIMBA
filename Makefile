@@ -1,12 +1,17 @@
 # Compilers
 NVCC := nvcc
-CXX  := g++
+CXX  := g++-12
 
 # Flags
 DEPFLAGS := -MMD -MP
-NVCC_FLAGS := -O3 -std=c++17 -Iinclude --extended-lambda
+NVCC_FLAGS := -O3 -std=c++17 -arch=sm_90 -Iinclude --extended-lambda -ccbin=$(CXX)
 CXX_FLAGS  := -O3 -std=c++17 -Iinclude -Wall -Wextra
-LIBS       := -lfmt
+HAS_STD_FORMAT := $(shell $(CXX) $(CXXFLAGS) -E -dM -x c++ /dev/null | grep __cpp_lib_format)
+ifneq ($(HAS_STD_FORMAT),)
+    LIBS = 
+else
+    LIBS = -lfmt
+endif
 
 CPPS := $(wildcard src/*.cpp)
 CUS  := $(wildcard src/*.cu)

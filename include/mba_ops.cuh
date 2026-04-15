@@ -119,6 +119,7 @@ public:
 };
 
 template <class... Ops> class OpGroup {
+public:
   static constexpr std::array<char, sizeof...(Ops)> char_representation = {
       {Ops::char_representation}...};
 

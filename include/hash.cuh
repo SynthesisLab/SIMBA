@@ -40,11 +40,10 @@ using hash_set_t =
 template <int MaxNExamples> class GpuHashset {
   hash_set_t hash_set;
   int n_examples;
-  int n_variables;
 
 public:
-  GpuHashset(const int n_examples, const int n_variables, int capacity)
-      : n_examples(n_examples), n_variables(n_variables), hash_set(capacity) {}
+  GpuHashset(const int n_examples, int capacity)
+      : n_examples(n_examples), hash_set(capacity) {}
 
   __device__ bool insert(uint32_t *CS) {
 

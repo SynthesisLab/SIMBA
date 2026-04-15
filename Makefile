@@ -19,8 +19,8 @@ DEPS := $(OBJS:.o=.d)
 
 all: $(BINS)
 
-%: bin/%.o $(OBJS)
-	$(NVCC) $^ -o $@ $(LIBS)
+%: bin/%.cu $(OBJS)
+	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(LIBS)
 
 %.o: %.cu
 	$(NVCC) $(DEPFLAGS) $(NVCC_FLAGS) -c $< -o $@

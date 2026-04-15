@@ -6,7 +6,7 @@
 
 // Murmur-inspired avalanche hash – spreads bits so that similar 32-bit values
 // produce very different 64-bit contributions to the fingerprint.
-__device__ uint32_t simple_hash(uint32_t input) {
+inline __device__ uint32_t simple_hash(uint32_t input) {
   input ^= input >> 16;
   input *= 0x85ebca6b;
   input ^= input >> 13;
@@ -17,7 +17,7 @@ __device__ uint32_t simple_hash(uint32_t input) {
 
 // Fold all n_examples output values of a characteristic sequence (CS) into a
 // single 64-bit fingerprint.
-__device__ uint64_t hash_cs(uint32_t *CS, const int n_examples) {
+inline __device__ uint64_t hash_cs(uint32_t *CS, const int n_examples) {
   uint64_t res = 0;
   for (int i = 0; i < n_examples; ++i) {
     uint64_t val = simple_hash(CS[i]) + 0x9e3779b9 + (res << 6) + (res >> 2);

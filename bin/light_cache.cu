@@ -219,7 +219,7 @@ public:
     MFormulaCache cache(MBACacheCapacity, temp_MBACacheCapacity,
                         mba.n_examples);
 
-    MHashset hashset(mba.n_examples, mba.n_variables, 2 * MBACacheCapacity);
+    MHashset hashset(mba.n_examples, 2 * MBACacheCapacity);
 
     // ----------------------------
     // Enumeration of the next MBAs

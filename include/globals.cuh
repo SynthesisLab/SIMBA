@@ -13,7 +13,7 @@ __constant__ uint32_t d_outputs[max_n_examples];
 //                                             '+', '-', '*'};
 __constant__ uint64_t d_numForm[max_formula_size + 1][9];
 
-__device__ bool is_solution(uint32_t *cs, const int n_examples) {
+inline __device__ bool is_solution(uint32_t *cs, const int n_examples) {
   bool ok = true;
   for (int i = 0; i < n_examples; ++i) {
     ok = ok && (cs[i] == d_outputs[i]);

@@ -3,22 +3,20 @@
 #include "mba.cuh"
 #include "utils.cuh"
 #include <cassert>
+#include <chrono>
 #include <cstdint>
-#include <fmt/core.h>
+#include <cstdio>
+#include <format>
 #include <stack>
 #include <vector>
+
+#define MEASUREMENT_MODE
 
 struct StackEntry {
   uint64_t n;
   int size;
   int shift;
 };
-
-__device__ void printFormula(int size, char formula[maxFormulaSize]) {
-  for (int i = 0; i < size; ++i)
-    printf("%c ", formula[i]);
-  printf("\n");
-}
 
 __device__ void numberToFormula(uint64_t n, int size,
                                 char formula[maxFormulaSize]) {
@@ -108,8 +106,8 @@ __global__ void processOperator(const int n_examples, const int n_variables,
 void printMatrix(uint64_t *matrix, int m, int n) {
   for (int i = 0; i < m; ++i) {
     for (int j = 0; j < n; ++j)
-      printf("%-12lu ", matrix[i * n + j]);
-    printf("\n");
+      fprintf(stderr, "%-12lu ", matrix[i * n + j]);
+    fprintf(stderr, "\n");
   }
 }
 
@@ -195,17 +193,17 @@ class NoCache {
 public:
   static std::string solve(const MbaInstance &mba, const int max_size) {
     if (max_size > maxFormulaSize) {
-      throw fmt::format("This version supports formulas of size at most {}",
+      throw std::format("This version supports formulas of size at most {}",
                         maxFormulaSize);
     }
 
     if (mba.n_examples > maxNumOfSamples) {
-      throw fmt::format("This version supports at most {} samples",
+      throw std::format("This version supports at most {} samples",
                         maxNumOfSamples);
     }
 
     if (mba.n_variables > maxNumOfVars) {
-      throw fmt::format("This version supports at most {} variables",
+      throw std::format("This version supports at most {} variables",
                         maxNumOfVars);
     }
 
@@ -219,8 +217,9 @@ public:
     uint64_t allMBAs{};
 
 #ifndef MEASUREMENT_MODE
-    printf("Length %-2d | Vars  | CheckedMBAs: %-13lu | ToBeChecked: %-12d \n",
-           1, allMBAs, mba.n_variables);
+    fprintf(stderr,
+            "Length %-2d | Vars  | CheckedMBAs: %-13lu | ToBeChecked: %-12d \n",
+            1, allMBAs, mba.n_variables);
 #endif
 
     // Number of formulas matrix
@@ -249,7 +248,8 @@ public:
         N = numForm[formula_size * 9 + i];
         blockSize = (N + 1023) / 1024;
 #ifndef MEASUREMENT_MODE
-        printf(
+        fprintf(
+            stderr,
             "Length %-2d | %-5s | CheckedMBAs: %-13lu | ToBeChecked: %-12lu \n",
             formula_size, opStr[i], allMBAs, N);
 #endif
@@ -290,18 +290,20 @@ int main(int argc, char *argv[]) {
   // -----------------
 
   if (argc != 3) {
-    printf("Arguments should be in the form of\n");
-    printf(
+    fprintf(stderr, "Arguments should be in the form of\n");
+    fprintf(
+        stderr,
         "-----------------------------------------------------------------\n");
-    printf("%s <input_file_address> <maxLen>\n", argv[0]);
-    printf(
+    fprintf(stderr, "%s <input_file_address> <maxLen>\n", argv[0]);
+    fprintf(
+        stderr,
         "-----------------------------------------------------------------\n");
     return 0;
   }
 
   if (atoi(argv[2]) < 1 || atoi(argv[2]) > 50) {
-    printf("Argument maxLen = %s should be between 1 and %d", argv[2],
-           maxFormulaSize);
+    fprintf(stderr, "Argument maxLen = %s should be between 1 and %d", argv[2],
+            maxFormulaSize);
     return 0;
   }
 
@@ -314,7 +316,7 @@ int main(int argc, char *argv[]) {
   // ------------------------------
 
 #ifdef MEASUREMENT_MODE
-  auto start = chrono::high_resolution_clock::now();
+  auto start = std::chrono::high_resolution_clock::now();
 #endif
 
   std::string output = NoCache::solve(mba, max_size);
@@ -322,18 +324,14 @@ int main(int argc, char *argv[]) {
     return 0;
 
 #ifdef MEASUREMENT_MODE
-  auto stop = chrono::high_resolution_clock::now();
-#endif
-
-#ifdef MEASUREMENT_MODE
+  auto stop = std::chrono::high_resolution_clock::now();
   auto duration =
       std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
           .count();
-  // printf("\nNumber of All LTLs: %lu", allLTLs);
-  // printf("\nCost of Final LTL: %d", LTLcost);
-  printf("\nRunning Time: %f s", (double)duration * 0.000001);
+  double time_s = (double)duration / 1e6;
+  fprintf(stderr, "\nRunning Time: %f s", (double)duration * 0.000001);
 #endif
 
-  printf("\nMBA: \"%s\"\n", output.c_str());
+  std::cout << file_name << "," << output << "," << time_s << std::endl;
   return 0;
 }

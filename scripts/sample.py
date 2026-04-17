@@ -42,7 +42,7 @@ class MbaExpr:
 def example_to_json(inputs: tuple[np.uint32, ...], output: np.uint32) -> dict[str, Any]:
     return {
         "inputs": [{"value": int(x), "size": 32} for x in inputs],
-        "outputs": [{"value": int(output), "size": 32}],
+        "output": [{"value": int(output), "size": 32}],
     }
 
 

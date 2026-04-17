@@ -3,14 +3,14 @@
 #include "mba.cuh"
 #include "ops.cuh"
 #include "utils.cuh"
-#include <fmt/core.h>
+#include <format>
 #include <stack>
 #include <thrust/copy.h>
 #include <thrust/device_ptr.h>
 #include <thrust/remove.h>
 #include <warpcore/hash_set.cuh>
 
-// #define MEASUREMENT_MODE
+#define MEASUREMENT_MODE
 
 using std::min;
 using std::stack;
@@ -205,7 +205,8 @@ bool generateMBAs(int MBALen, int *startPoints, const int MBACacheCapacity,
         y = x + min(lim * MBALen - 1, idx2 - x);
         N = (y - x + 1) / MBALen;
 #ifndef MEASUREMENT_MODE
-        printf(
+        fprintf(
+            stderr,
             "Length %-2d | (%c) | StoredMBAs: %-11lu | ToBeChecked: %-10d \n",
             MBALen, Op::char_representation, allMBAs, N);
 #endif
@@ -237,6 +238,10 @@ bool generateMBAs(int MBALen, int *startPoints, const int MBACacheCapacity,
       int idx4 = startPoints[MBALen - i] - 1;
       int N =
           ((idx4 - idx3 + 1) / (MBALen - i)) * ((idx2 - idx1 + 1) / (i + 1));
+
+      if (N == 0)
+        continue;
+
       int lim = temp_MBACacheCapacity /
                 (((idx2 - idx1 + 1) / (i + 1)) * (MBALen + 1));
       if (notCommut)
@@ -246,10 +251,11 @@ bool generateMBAs(int MBALen, int *startPoints, const int MBACacheCapacity,
         int x = idx3, y;
         do {
           y = x + min(lim * (MBALen - i) - 1, idx4 - x);
-          N = (y - x + 1) * (idx2 - idx1 + 1) / ((i + 1) * (MBALen - i));
+          N = ((y - x + 1) / (MBALen - i)) * ((idx2 - idx1 + 1) / (i + 1));
           int modN = notCommut ? 2 * N : N;
 #ifndef MEASUREMENT_MODE
-          printf(
+          fprintf(
+              stderr,
               "Length %-2d | (%c) | StoredMBAs: %-11lu | ToBeChecked: %-10d \n",
               MBALen, Op::char_representation, allMBAs, modN);
 #endif
@@ -318,17 +324,17 @@ class NoCache {
 public:
   static string solve(const MbaInstance &mba, const int max_size) {
     if (max_size > maxFormulaSize) {
-      throw fmt::format("This version supports formulas of size at most {}",
+      throw std::format("This version supports formulas of size at most {}",
                         maxFormulaSize);
     }
 
     if (mba.n_examples > maxNumOfSamples) {
-      throw fmt::format("This version supports at most {} samples",
+      throw std::format("This version supports at most {} samples",
                         maxNumOfSamples);
     }
 
     if (mba.n_variables > maxNumOfVars) {
-      throw fmt::format("This version supports at most {} variables",
+      throw std::format("This version supports at most {} variables",
                         maxNumOfVars);
     }
 
@@ -347,8 +353,9 @@ public:
     uint64_t lastIdx{};
 
 #ifndef MEASUREMENT_MODE
-    printf("Length %-2d | Vars  | StoredMBAs: %-11lu | ToBeChecked: %-10d \n",
-           1, allMBAs, mba.n_variables);
+    fprintf(stderr,
+            "Length %-2d | Vars  | StoredMBAs: %-11lu | ToBeChecked: %-10d \n",
+            1, allMBAs, mba.n_variables);
 #endif
 
     // Initializing the cache with variables
@@ -383,6 +390,8 @@ public:
     char *MBAFormula = new char[64];
     MBAFormula[0] = '\0';
     checkCuda(cudaMalloc(&d_MBAFormula, 64 * sizeof(char)));
+    checkCuda(cudaMemcpy(d_MBAFormula, MBAFormula, 64 * sizeof(char),
+                         cudaMemcpyHostToDevice));
 
     char *d_MBACache, *d_temp_MBACache;
     checkCuda(cudaMalloc(&d_MBACache, MBACacheCapacity * sizeof(char)));
@@ -521,17 +530,20 @@ int main(int argc, char *argv[]) {
   // -----------------
 
   if (argc != 3) {
-    printf("Arguments should be in the form of\n");
-    printf("-----------------------------------------------------------------"
-           "\n");
-    printf("%s <input_file_address> <max_size>\n", argv[0]);
-    printf("-----------------------------------------------------------------"
-           "\n");
+    fprintf(stderr, "Arguments should be in the form of\n");
+    fprintf(stderr,
+            "-----------------------------------------------------------------"
+            "\n");
+    fprintf(stderr, "%s <input_file_address> <max_size>\n", argv[0]);
+    fprintf(stderr,
+            "-----------------------------------------------------------------"
+            "\n");
     return 0;
   }
 
   if (atoi(argv[2]) < 1 || atoi(argv[2]) > 50) {
-    printf("Argument max_size = %s should be between 1 and 50", argv[2]);
+    fprintf(stderr, "Argument max_size = %s should be between 1 and 50",
+            argv[2]);
     return 0;
   }
 
@@ -544,26 +556,21 @@ int main(int argc, char *argv[]) {
   // ------------------------------
 
 #ifdef MEASUREMENT_MODE
-  auto start = chrono::high_resolution_clock::now();
+  auto start = std::chrono::high_resolution_clock::now();
 #endif
 
   string output = NoCache::solve(mba, max_size);
-  if (output == "see_the_error")
-    return 0;
 
 #ifdef MEASUREMENT_MODE
-  auto stop = chrono::high_resolution_clock::now();
-#endif
-
-#ifdef MEASUREMENT_MODE
+  auto stop = std::chrono::high_resolution_clock::now();
   auto duration =
       std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
           .count();
-  // printf("\nNumber of All LTLs: %lu", allLTLs);
-  // printf("\nCost of Final LTL: %d", LTLcost);
-  printf("\nRunning Time: %f s", (double)duration * 0.000001);
+
+  double time_s = (double)duration / 1e6;
+  fprintf(stderr, "\nRunning Time: %f s", (double)duration * 0.000001);
 #endif
 
-  printf("\nMBA: \"%s\"\n", output.c_str());
+  std::cout << file_name << "," << output << "," << time_s << std::endl;
   return 0;
 }

@@ -1,10 +1,10 @@
 CXX      := c++
-CXXFLAGS := -std=c++17 -Wall -Wextra -Iinclude -Isrc
+CXXFLAGS := -std=c++20 -Wall -Wextra -Iinclude -Isrc
 
 # CUDA / nvcc settings.
 # Adjust WARPCORE_DIR to point to your warpcore installation.
 NVCC       := nvcc
-NVCCFLAGS  := -std=c++17 -Iinclude -Isrc
+NVCCFLAGS  := -std=c++20 -Iinclude -Isrc --extended-lambda -arch=sm_90
 WARPCORE_DIR ?= $(HOME)/warpcore
 NVCCFLAGS  += -I$(WARPCORE_DIR)/include
 
@@ -42,4 +42,4 @@ test-full-cache: $(FULLCACHE_BIN)
 	./$(FULLCACHE_BIN) benchmarks/test.json 5
 
 clean:
-	rm -rf build include
+	rm -rf build

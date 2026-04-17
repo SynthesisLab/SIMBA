@@ -34,11 +34,9 @@ readJsonFile(const std::string &filename) {
   int idx = 0;
   for (const auto &example : j["examples"]) {
     const int exampleIdx = idx / numVar;
-    outputData[exampleIdx] = std::stoul(
-        example["output"][0]["value"].get<std::string>(), nullptr, 16);
+    outputData[exampleIdx] = example["output"][0]["value"].get<uint32_t>();
     for (const auto &value : example["inputs"]) {
-      inputData[idx++] =
-          std::stoul(value["value"].get<std::string>(), nullptr, 16);
+      inputData[idx++] = value["value"].get<uint32_t>();
     }
   }
 

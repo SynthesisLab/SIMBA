@@ -338,8 +338,8 @@ __global__ void processOperator(
   const int tid = blockDim.x * blockIdx.x + threadIdx.x;
   constexpr bool isUnary = (op == Op::Not || op == Op::Neg);
   constexpr bool notCommut =
-      (op == Op::Minus || op == Op::Div || op == Op::Mod || op == Op::LShift ||
-       op == Op::RShift);
+      (op == Op::Minus); /* || op == Op::Div || op == Op::Mod || op ==
+       Op::LShift || op == Op::RShift);*/
   const int maxTid =
       isUnary ? (idx2 - idx1 + 1) : (idx4 - idx3 + 1) * (idx2 - idx1 + 1);
 
@@ -447,8 +447,10 @@ __global__ void generateResIndices(const int numVar, const int index,
 }
 
 // String representation of each Op in declaration order.
-const string opStrs[] = {"~", "&", "|", "^", "<<", ">>",
-                         "-", "+", "-", "*", "/",  "%"};
+const string opStrs[] = {
+    "~", "&", "|", "^", //"<<", ">>",
+    "-", "+", "-", "*", //"/",  "%"
+};
 
 // X-table of all operators in the order they are enumerated.
 // Each row: (Op enum value, display label, startPoints column index 1..numOps).
@@ -458,14 +460,14 @@ const string opStrs[] = {"~", "&", "|", "^", "<<", ">>",
   X(Op::And, "(&)  ", 2)                                                       \
   X(Op::Or, "(|)  ", 3)                                                        \
   X(Op::Xor, "(^)  ", 4)                                                       \
-  X(Op::LShift, "(<<) ", 5)                                                    \
-  X(Op::RShift, "(>>) ", 6)                                                    \
+  /* X(Op::LShift, "(<<) ", 5)                                                 \
+  X(Op::RShift, "(>>) ", 6)*/                                                  \
   X(Op::Neg, "(Neg)", 7)                                                       \
   X(Op::Plus, "(+)  ", 8)                                                      \
   X(Op::Minus, "(-)  ", 9)                                                     \
   X(Op::Mul, "(*)  ", 10)                                                      \
-  X(Op::Div, "(/)  ", 11)                                                      \
-  X(Op::Mod, "(%)  ", 12)
+  /*X(Op::Div, "(/)  ", 11)                                                    \
+  X(Op::Mod, "(%)  ", 12)*/
 
 // Count the number of operators by expanding SIMBA_OPS as a sum of 1s.
 #define COUNT_OP(op, lbl, idx) +1

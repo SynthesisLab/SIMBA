@@ -462,10 +462,10 @@ const string opStrs[] = {
   X(Op::Xor, "(^)  ", 4)                                                       \
   /* X(Op::LShift, "(<<) ", 5)                                                 \
   X(Op::RShift, "(>>) ", 6)*/                                                  \
-  X(Op::Neg, "(Neg)", 7)                                                       \
-  X(Op::Plus, "(+)  ", 8)                                                      \
-  X(Op::Minus, "(-)  ", 9)                                                     \
-  X(Op::Mul, "(*)  ", 10)                                                      \
+  X(Op::Neg, "(Neg)", 5)                                                       \
+  X(Op::Plus, "(+)  ", 6)                                                      \
+  X(Op::Minus, "(-)  ", 7)                                                     \
+  X(Op::Mul, "(*)  ", 8)                                                       \
   /*X(Op::Div, "(/)  ", 11)                                                    \
   X(Op::Mod, "(%)  ", 12)*/
 
@@ -492,7 +492,7 @@ string toString(int index, map<int, pair<int, int>> &indicesMap,
   i--;
 
   int op = i % numOps;
-  bool isUnary = (op == 0 || op == 6); // Op::Not or Op::Neg
+  bool isUnary = (op == 0 || op == 4); // Op::Not or Op::Neg
 
   if (isUnary) {
     string res = toString(indicesMap[index].first, indicesMap, startPoints);

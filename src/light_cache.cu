@@ -449,19 +449,19 @@ public:
       if (lastRound)
         break;
 
-      lastRound = generateMBAs<LShift>(
-          MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity, allMBAs,
-          lastIdx, mba.n_examples, mba.n_variables, d_MBACache, d_temp_MBACache,
-          d_MBAFormula, MBAFormula, hashSet);
-      if (lastRound)
-        break;
+      // lastRound = generateMBAs<LShift>(
+      //     MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity,
+      //     allMBAs, lastIdx, mba.n_examples, mba.n_variables, d_MBACache,
+      //     d_temp_MBACache, d_MBAFormula, MBAFormula, hashSet);
+      // if (lastRound)
+      //   break;
 
-      lastRound = generateMBAs<RShift>(
-          MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity, allMBAs,
-          lastIdx, mba.n_examples, mba.n_variables, d_MBACache, d_temp_MBACache,
-          d_MBAFormula, MBAFormula, hashSet);
-      if (lastRound)
-        break;
+      // lastRound = generateMBAs<RShift>(
+      //     MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity,
+      //     allMBAs, lastIdx, mba.n_examples, mba.n_variables, d_MBACache,
+      //     d_temp_MBACache, d_MBAFormula, MBAFormula, hashSet);
+      // if (lastRound)
+      //   break;
 
       lastRound = generateMBAs<Neg>(
           MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity, allMBAs,
@@ -491,19 +491,19 @@ public:
       if (lastRound)
         break;
 
-      lastRound = generateMBAs<Div>(
-          MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity, allMBAs,
-          lastIdx, mba.n_examples, mba.n_variables, d_MBACache, d_temp_MBACache,
-          d_MBAFormula, MBAFormula, hashSet);
-      if (lastRound)
-        break;
+      // lastRound = generateMBAs<Div>(
+      //     MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity,
+      //     allMBAs, lastIdx, mba.n_examples, mba.n_variables, d_MBACache,
+      //     d_temp_MBACache, d_MBAFormula, MBAFormula, hashSet);
+      // if (lastRound)
+      //   break;
 
-      lastRound = generateMBAs<Mod>(
-          MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity, allMBAs,
-          lastIdx, mba.n_examples, mba.n_variables, d_MBACache, d_temp_MBACache,
-          d_MBAFormula, MBAFormula, hashSet);
-      if (lastRound)
-        break;
+      // lastRound = generateMBAs<Mod>(
+      //     MBALen, startPoints, MBACacheCapacity, temp_MBACacheCapacity,
+      //     allMBAs, lastIdx, mba.n_examples, mba.n_variables, d_MBACache,
+      //     d_temp_MBACache, d_MBAFormula, MBAFormula, hashSet);
+      // if (lastRound)
+      //   break;
     }
 
     string output;

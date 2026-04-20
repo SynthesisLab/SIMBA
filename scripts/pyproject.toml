@@ -9,4 +9,5 @@ dependencies = [
     "pltpublish>=1.0.3",
     "pycairo>=1.29.0",
     "pyqt6>=6.11.0",
+    "tqdm>=4.67.3",
 ]

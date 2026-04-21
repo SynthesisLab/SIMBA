@@ -3,6 +3,7 @@
 
 // Uncomment to suppress all progress output and enable timing.
 #define MEASUREMENT_MODE
+#define PRINT_CACHE_SIZE
 
 #ifdef MEASUREMENT_MODE
 #include <chrono>
@@ -758,6 +759,9 @@ string MBA(const int maxLen, const int numExamples, uint32_t *inputData,
                             bufs, FinalMBAIdx.get(), hashSet, label, idx);
     SIMBA_OPS(TRY_OP)
 #undef TRY_OP
+#ifdef PRINT_CACHE_SIZE
+    std::cout << MBALen << "," << lastIdx << std::endl;
+#endif
     if (done)
       break;
   }
@@ -836,9 +840,13 @@ int main(int argc, char *argv[]) {
 
   double time_s = (double)duration / 1e6;
   fprintf(stderr, "\nRunning Time: %f s", (double)duration * 0.000001);
+#ifndef PRINT_CACHE_SIZE
   std::cout << fileName << "," << output << "," << time_s << std::endl;
+#endif
 #else
+#ifndef PRINT_CACHE_SIZE
   std::cout << fileName << "," << output << std::endl;
+#endif
 #endif
 
   return 0;

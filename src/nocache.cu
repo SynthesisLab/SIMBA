@@ -12,6 +12,8 @@
 
 #define MEASUREMENT_MODE
 
+__device__ int solution_found = 0;
+
 struct StackEntry {
   uint64_t n;
   int size;
@@ -98,8 +100,9 @@ __global__ void processOperator(const int n_examples, const int n_variables,
         is_solution_rpn(formula, formula_size, n_examples, n_variables);
 
     if (found)
-      for (int i = 0; i < formula_size; ++i)
-        d_res[i] = formula[i];
+      if (atomicCAS(&solution_found, 0, 1) == 0)
+        for (int i = 0; i < formula_size; ++i)
+          d_res[i] = formula[i];
   }
 }
 
@@ -173,7 +176,8 @@ std::string MBAToString(const char *MBAFormula) {
         }
       } else {
         if (stack.size() < 2)
-          return "Error : Incorrect formula.\n";
+          return std::format("Error : Incorrect formula (stack size < 2). {}\n",
+                             MBAFormula);
         std::string right = stack.top();
         stack.pop();
         std::string left = stack.top();
@@ -185,7 +189,8 @@ std::string MBAToString(const char *MBAFormula) {
   }
 
   if (stack.size() != 1)
-    return "Error : Incorrect Formula.\n";
+    return std::format("Error : Incorrect formula (stack size != 2). {}\n",
+                       MBAFormula);
   return stack.top();
 }
 

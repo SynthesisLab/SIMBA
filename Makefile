@@ -13,13 +13,9 @@ CUS := $(wildcard src/*.cu)
 OBJS := $(CPPS:.cpp=.o) $(CUS:.cu=.o)
 DEPS := $(OBJS:.o=.d)
 
-# all: simba_nocache
-all: simba_lightcache
+all: simba_nocache
 
 simba_nocache: src/nocache.o src/instance.o
-	$(NVCC) $^ -o $@ $(LIBS)
-
-simba_lightcache: src/light_cache.o src/instance.o
 	$(NVCC) $^ -o $@ $(LIBS)
 
 %.o: %.cu

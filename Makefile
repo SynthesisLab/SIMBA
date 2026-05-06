@@ -4,9 +4,8 @@ CXX  := g++
 
 # Flags
 DEPFLAGS := -MMD -MP
-NVCC_FLAGS := -O3 -std=c++17 -Iincludes --extended-lambda
-CXX_FLAGS  := -O3 -std=c++17 -Wall -Wextra
-LIBS       := -lfmt
+NVCC_FLAGS := -O2 -std=c++20 -Iincludes --extended-lambda
+CXX_FLAGS  := -O2 -std=c++20 -Wall -Wextra
 
 CPPS := $(wildcard src/*.cpp)
 CUS := $(wildcard src/*.cu)

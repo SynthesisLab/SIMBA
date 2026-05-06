@@ -1,12 +1,10 @@
 CXX      := c++
-CXXFLAGS := -std=c++20 -Wall -Wextra -Iinclude -Isrc
+CXXFLAGS := -O2 -std=c++20 -Wall -Wextra -Iinclude -Isrc
 
 # CUDA / nvcc settings.
 # Adjust WARPCORE_DIR to point to your warpcore installation.
 NVCC       := nvcc
-NVCCFLAGS  := -std=c++20 -Iinclude -Isrc --extended-lambda -arch=sm_90
-WARPCORE_DIR ?= $(HOME)/warpcore
-NVCCFLAGS  += -I$(WARPCORE_DIR)/include
+NVCCFLAGS  := -O2 -std=c++20 -Iinclude -Isrc --extended-lambda -arch=sm_90
 
 JSON_URL := https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp
 JSON_HDR := include/nlohmann/json.hpp

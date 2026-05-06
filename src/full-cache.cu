@@ -3,7 +3,8 @@
 
 // Uncomment to suppress all progress output and enable timing.
 #define MEASUREMENT_MODE
-#define PRINT_CACHE_SIZE
+// Uncomment to output cache size
+// #define PRINT_CACHE_SIZE
 
 #ifdef MEASUREMENT_MODE
 #include <chrono>

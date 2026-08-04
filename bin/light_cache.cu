@@ -4,11 +4,13 @@
 #include "instance.h"
 #include "mba.cuh"
 #include "mba_ops.cuh"
+#include "sygus_parser.h"
 #include "utils.cuh"
 #include <cstddef>
 #include <cstdint>
 #include <fmt/core.h>
 #include <stack>
+#include <vector>
 
 // #define MEASUREMENT_MODE
 
@@ -25,10 +27,13 @@ using MFormulaCache = FormulaCache<max_formula_size>;
 using MHashset = GpuHashset<max_n_examples>;
 
 __global__ void process_variable(MFormulaCache &cache, MHashset hashset,
-                                 const int n_examples, const int n_variables) {
+                                 const int n_examples, const int n_variables,
+                                 const int n_constants) {
   const int tid = blockDim.x * blockIdx.x + threadIdx.x;
+  if (tid >= n_variables + n_constants)
+    return;
 
-  char *new_formula = cache.build_variable(tid);
+  char *new_formula = cache.build_leaf(tid, n_variables);
   uint32_t CS[max_n_examples];
   for (int i = 0; i < n_examples; ++i) {
     CS[i] = evaluateRPN(new_formula, i, n_variables);
@@ -42,9 +47,11 @@ __global__ void process_variable(MFormulaCache &cache, MHashset hashset,
 }
 
 bool process_variables(MFormulaCache &cache, MHashset hashset,
-                       const int n_examples, const int n_variables) {
+                       const int n_examples, const int n_variables,
+                       const int n_constants) {
 
-  process_variable<<<1, 16>>>(cache, hashset, n_examples, n_variables);
+  process_variable<<<1, n_variables + n_constants>>>(
+      cache, hashset, n_examples, n_variables, n_constants);
 
   checkCuda(cudaPeekAtLastError());
   int solution = cache.get_solution();
@@ -126,14 +133,19 @@ bool process_operator(const int n_examples, const int n_variables,
 
 template <class... Ops>
 bool process_operators(const int n_examples, const int n_variables,
-                       MFormulaCache &cache, MHashset hashset) {
+                       MFormulaCache &cache, MHashset hashset,
+                       const OpFlags &flags) {
   bool res_found =
-      (process_operator<Ops>(n_examples, n_variables, cache, hashset) || ...);
+      ((in_group<Ops>(flags) &&
+        process_operator<Ops>(n_examples, n_variables, cache, hashset)) ||
+       ...);
 
   return res_found;
 }
 
-template <class... Ops> string mba_to_string(const char *MBAFormula) {
+template <class... Ops>
+string mba_to_string(const char *MBAFormula,
+                     const std::vector<uint32_t> &constants) {
 
   std::stack<std::string> stack;
   unordered_map<char, string> op_to_str = {
@@ -147,6 +159,8 @@ template <class... Ops> string mba_to_string(const char *MBAFormula) {
 
     if (token >= '0' && token <= '9') {
       stack.push("v" + string(1, token));
+    } else if (token >= 'A' && token < 'A' + static_cast<int>(constants.size())) {
+      stack.push(to_string(constants[token - 'A']));
     } else {
       if (op_is_unary[token]) {
         if (!stack.empty()) {
@@ -173,7 +187,9 @@ template <class... Ops> string mba_to_string(const char *MBAFormula) {
 
 class NoCache {
 public:
-  static string solve(const MbaInstance &mba, const int max_size) {
+  static string solve(const MbaInstance &mba, const int max_size,
+                      const OpFlags &flags = OpFlags{},
+                      const std::vector<uint32_t> &constants = {}) {
     if (max_size > max_formula_size) {
       throw fmt::format("This version supports formulas of size at most {}",
                         max_formula_size);
@@ -189,11 +205,20 @@ public:
                         max_n_variables);
     }
 
-    // Copying number of vars, inputs and outputs into the constant memory
+    if (static_cast<int>(constants.size()) > max_n_constants) {
+      throw fmt::format("This version supports at most {} constants",
+                        max_n_constants);
+    }
+
+    // Copying number of vars, inputs, outputs and constants into the
+    // constant memory
     checkCuda(cudaMemcpyToSymbol(d_inputs, mba.inputs.data(),
                                  mba.inputs.size() * sizeof(uint32_t)));
     checkCuda(cudaMemcpyToSymbol(d_outputs, mba.outputs.data(),
                                  mba.outputs.size() * sizeof(uint32_t)));
+    if (!constants.empty())
+      checkCuda(cudaMemcpyToSymbol(d_constants, constants.data(),
+                                   constants.size() * sizeof(uint32_t)));
 
     // Number of generated formulas
     uint64_t allMBAs{};
@@ -225,19 +250,21 @@ public:
     // Enumeration of the next MBAs
     // ----------------------------
 
-    bool res_found =
-        process_variables(cache, hashset, mba.n_examples, mba.n_variables);
+    int n_constants = static_cast<int>(constants.size());
+    bool res_found = process_variables(cache, hashset, mba.n_examples,
+                                       mba.n_variables, n_constants);
 
     for (int MBALen = 2; !res_found && MBALen <= max_size; ++MBALen) {
-      res_found = process_operators<Not, And, Or, Xor, LShift, RShift, Neg, Add,
-                                    Sub, Mul, Div, Mod>(
-          mba.n_examples, mba.n_variables, cache, hashset);
+      res_found = process_operators<Not, And, Or, Xor, LShift, RShift, AShr,
+                                    Neg, Add, Sub, Mul, Div, Mod, SDiv, SRem>(
+          mba.n_examples, mba.n_variables, cache, hashset, flags);
     }
 
     if (res_found) {
       auto MBAFormula = cache.get_solution_ptr();
-      return mba_to_string<Not, And, Or, Xor, LShift, RShift, Neg, Add, Sub,
-                           Mul, Div, Mod>(MBAFormula.data());
+      return mba_to_string<Not, And, Or, Xor, LShift, RShift, AShr, Neg, Add,
+                           Sub, Mul, Div, Mod, SDiv, SRem>(MBAFormula.data(),
+                                                           constants);
     } else {
       return "Not Found";
     }
@@ -250,11 +277,17 @@ int main(int argc, char *argv[]) {
   // Reading the input
   // -----------------
 
-  if (argc != 3) {
+  if (argc != 3 && argc != 4) {
     printf("Arguments should be in the form of\n");
     printf("-----------------------------------------------------------------"
            "\n");
-    printf("%s <input_file_address> <max_size>\n", argv[0]);
+    printf("%s <input_file_address> <max_size> "
+           "[bitwise,arithmetic,shift,division]\n",
+           argv[0]);
+    printf("<input_file_address> may be a .json MbaInstance or a SyGuS-BV "
+           ".sl file.\n");
+    printf("The optional trailing argument, if given, replaces the default "
+           "enabled op groups.\n");
     printf("-----------------------------------------------------------------"
            "\n");
     return 0;
@@ -266,8 +299,28 @@ int main(int argc, char *argv[]) {
   }
 
   string file_name = argv[1];
-  auto mba = MbaInstance::from_json_file(file_name);
   int max_size = atoi(argv[2]);
+
+  // Every op is enabled by default, matching this binary's behavior before
+  // op groups were introduced.
+  OpFlags flags{/*bitwise=*/true, /*arithmetic=*/true, /*shift=*/true,
+               /*division=*/true};
+  std::vector<uint32_t> constants;
+
+  MbaInstance mba;
+  bool is_sygus_file =
+      file_name.size() >= 3 && file_name.substr(file_name.size() - 3) == ".sl";
+  if (is_sygus_file) {
+    SygusParseResult parsed = parse_sygus_bv_file(file_name);
+    mba = parsed.instance;
+    flags = parsed.flags;
+    constants = parsed.constants;
+  } else {
+    mba = MbaInstance::from_json_file(file_name);
+  }
+
+  if (argc == 4)
+    flags = parse_op_flags(argv[3]);
 
   // ------------------------------
   // Mixed Boolean Arithmetic (MBA)
@@ -277,7 +330,7 @@ int main(int argc, char *argv[]) {
   auto start = chrono::high_resolution_clock::now();
 #endif
 
-  string output = NoCache::solve(mba, max_size);
+  string output = NoCache::solve(mba, max_size, flags, constants);
   if (output == "see_the_error")
     return 0;
 

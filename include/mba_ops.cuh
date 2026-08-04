@@ -1,8 +1,10 @@
 #ifndef SIMBA_OPS
 #define SIMBA_OPS
 
+#include "op_flags.h"
 #include <array>
 #include <cstdint>
+#include <type_traits>
 
 class UnaryOp {
 public:
@@ -118,6 +120,34 @@ public:
   static constexpr char unique_char = char_representation;
 };
 
+// Arithmetic (sign-extending) shift right: bvashr.
+class AShr : public BinaryOp, public NonCommutativeOp {
+public:
+  static __device__ constexpr uint32_t evaluate(uint32_t x, uint32_t y) {
+    return static_cast<uint32_t>(static_cast<int32_t>(x) >> y);
+  }
+  static constexpr char char_representation = 'a';
+  static constexpr char unique_char = char_representation;
+};
+// Signed division: bvsdiv.
+class SDiv : public BinaryOp, public NonCommutativeOp {
+public:
+  static __device__ constexpr uint32_t evaluate(uint32_t x, uint32_t y) {
+    return static_cast<uint32_t>(static_cast<int32_t>(x) / static_cast<int32_t>(y));
+  }
+  static constexpr char char_representation = 'q';
+  static constexpr char unique_char = char_representation;
+};
+// Signed remainder (sign of dividend): bvsrem.
+class SRem : public BinaryOp, public NonCommutativeOp {
+public:
+  static __device__ constexpr uint32_t evaluate(uint32_t x, uint32_t y) {
+    return static_cast<uint32_t>(static_cast<int32_t>(x) % static_cast<int32_t>(y));
+  }
+  static constexpr char char_representation = 'r';
+  static constexpr char unique_char = char_representation;
+};
+
 template <class... Ops> class OpGroup {
 public:
   static constexpr std::array<char, sizeof...(Ops)> char_representation = {
@@ -131,8 +161,27 @@ public:
 
   static constexpr std::array<bool, sizeof...(Ops)> is_binary = {
       {Ops::is_binary}...};
+
+  // Whether Op is one of the ops in this group; used to check group
+  // membership when a single Op type is gated by an OpFlags value.
+  template <class Op>
+  static constexpr bool contains = (std::is_same_v<Op, Ops> || ...);
 };
 
 using ReducedOps = OpGroup<Not, Neg, Add, Sub, And, Or, Xor, Mul>;
+
+// Named groups of ops, for use with OpFlags below.
+using BitwiseOps = OpGroup<Not, And, Or, Xor>;
+using ArithmeticOps = OpGroup<Neg, Add, Sub, Mul>;
+using ShiftOps = OpGroup<LShift, RShift, AShr>;
+using DivisionOps = OpGroup<Div, Mod, SDiv, SRem>;
+
+// Whether Op should be enumerated given the active OpFlags.
+template <class Op> inline bool in_group(const OpFlags &flags) {
+  return (flags.bitwise && BitwiseOps::contains<Op>) ||
+         (flags.arithmetic && ArithmeticOps::contains<Op>) ||
+         (flags.shift && ShiftOps::contains<Op>) ||
+         (flags.division && DivisionOps::contains<Op>);
+}
 
 #endif // SIMBA_OPS

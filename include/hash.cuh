@@ -37,7 +37,8 @@ using hash_set_t =
                           warpcore::hashers::MurmurHash<uint64_t>>,
                       warpcore::defaults::temp_memory_bytes()>;
 
-template <int MaxNExamples> class GpuHashset {
+template <int MaxNExamples> 
+class GpuHashset {
   hash_set_t hash_set;
   int n_examples;
 

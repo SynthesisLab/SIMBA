@@ -2,6 +2,7 @@
 #include "instance.h"
 #include "mba.cuh"
 #include "mba_ops.cuh"
+#include "sygus_parser.h"
 #include "utils.cuh"
 #include <cassert>
 #include <cstdint>
@@ -21,14 +22,15 @@ __device__ void printFormula(int size, char formula[max_formula_size]) {
   printf("\n");
 }
 
-template <class OpGroup>
-__host__ __device__ void numberToFormula(uint64_t n, int size,
+// Reads which ops are active from d_activeOps/d_numForm (populated at
+// runtime from an OpFlags - see build_active_ops below), rather than a
+// compile-time OpGroup: any combination of enabled op groups is supported
+// without a template instantiation per combination.
+__host__ __device__ void numberToFormula(uint64_t n, int size, int n_variables,
                                          char formula[max_formula_size]) {
 
   StackEntry stack[max_formula_size];
-  int shift = 0;
-  // stack[0] = {n, size};
-  stack[0] = {n, size, shift};
+  stack[0] = {n, size, 0};
   int stackIdx = 0;
 
   uint64_t opPartsum;
@@ -40,15 +42,16 @@ __host__ __device__ void numberToFormula(uint64_t n, int size,
     StackEntry entry = stack[stackIdx--];
     n = entry.n;
     size = entry.size;
-    // shift = entry.shift;
+    int shift = entry.shift;
 
     if (size == 1)
-      formula[shift] = '0' + n;
+      formula[shift] = (n < static_cast<uint64_t>(n_variables))
+                          ? static_cast<char>('0' + n)
+                          : static_cast<char>('A' + n - n_variables);
 
     else {
       uint64_t opPartsum = 0;
       uint64_t opIdx = 0;
-      uint64_t fIdx = 0;
 
       // Find the next operator
       while (n >= opPartsum + d_numForm[size][opIdx])
@@ -58,26 +61,29 @@ __host__ __device__ void numberToFormula(uint64_t n, int size,
       n -= opPartsum;
 
       size--;
-      formula[shift + size] = OpGroup::unique_char[opIdx];
+      formula[shift + size] = d_activeOps[opIdx].unique_char;
 
-      if (opIdx == 0 || opIdx == 4)
-        stack[++stackIdx] = {n, size};
+      if (!d_activeOps[opIdx].is_binary)
+        stack[++stackIdx] = {n, size, shift};
 
       else {
 
         fPartsum = 0;
-        fIdx = 1;
+        uint64_t fIdx = 1;
 
         // Operator is binary : Find the sizes of the operands
-        while (n >= fPartsum + d_numForm[fIdx][8] * d_numForm[size - fIdx][8]) {
-          fPartsum += d_numForm[fIdx][8] * d_numForm[size - fIdx][8];
+        while (n >= fPartsum + d_numForm[fIdx][max_n_ops] *
+                                   d_numForm[size - fIdx][max_n_ops]) {
+          fPartsum +=
+              d_numForm[fIdx][max_n_ops] * d_numForm[size - fIdx][max_n_ops];
           fIdx++;
         }
         n -= fPartsum;
 
-        rightsum = d_numForm[size - fIdx][8];
-        stack[++stackIdx] = {n / rightsum, fIdx, shift};
-        stack[++stackIdx] = {n % rightsum, size - fIdx, shift + fIdx};
+        rightsum = d_numForm[size - fIdx][max_n_ops];
+        stack[++stackIdx] = {n / rightsum, static_cast<int>(fIdx), shift};
+        stack[++stackIdx] = {n % rightsum, size - static_cast<int>(fIdx),
+                             shift + static_cast<int>(fIdx)};
       }
     }
   }
@@ -96,7 +102,7 @@ __global__ void processOperator(const int n_examples, const int n_variables,
     tid += offset;
 
     char formula[max_formula_size];
-    numberToFormula<ReducedOps>(tid, formula_size, formula);
+    numberToFormula(tid, formula_size, n_variables, formula);
     bool found =
         is_solution_rpn(formula, formula_size, n_examples, n_variables);
 
@@ -114,58 +120,77 @@ void printMatrix(uint64_t *matrix, int m, int n) {
   }
 }
 
-std::vector<uint64_t> compute_n_formulas(int max_size, int n_variables) {
+// Builds the runtime list of active ops (and, host-side only, whether each
+// commutes - needed by compute_n_formulas but not by the device, since
+// numberToFormula's split logic already derives the right operand-size
+// range purely from the per-op formula-count budget computed below).
+template <class Op>
+void maybe_add_op(std::vector<ActiveOp> &ops, std::vector<bool> &op_commutes,
+                  const OpFlags &flags) {
+  if (in_group<Op>(flags)) {
+    ops.push_back({Op::unique_char, Op::is_binary});
+    op_commutes.push_back(Op::commutes);
+  }
+}
 
-  // Last column is the number of formulas of the given size
-  std::vector<uint64_t> numForm((max_size + 1) * 9, 0);
+template <class... Ops>
+void build_active_ops(const OpFlags &flags, std::vector<ActiveOp> &ops,
+                      std::vector<bool> &op_commutes) {
+  (maybe_add_op<Ops>(ops, op_commutes, flags), ...);
+}
 
-  // Initialisation with variables and unary operators
-  numForm[1 * 9 + 8] = n_variables;
-  numForm[2 * 9 + 0] = n_variables;
-  numForm[2 * 9 + 4] = n_variables;
-  numForm[2 * 9 + 8] = 2 * n_variables;
+// numForm[size][op] = number of formulas of exactly `size` tokens whose root
+// is active_ops[op]; numForm[size][max_n_ops] = total formulas of that size.
+// Sized to match d_numForm's fixed [max_formula_size+1][max_n_ops+1] layout
+// regardless of how many ops are actually active, so it can be copied to
+// device constant memory directly; unused trailing op columns stay 0.
+std::vector<uint64_t> compute_n_formulas(int max_size, int n_leaves,
+                                         const std::vector<ActiveOp> &active_ops,
+                                         const std::vector<bool> &op_commutes) {
 
-  // Generation
-  uint64_t numOfUnaryFormulas;
-  uint64_t numOfCommutBinaryFormulas;
-  uint64_t numOfNotCommutBinaryFormulas;
+  const int cols = max_n_ops + 1;
+  const int n_ops = static_cast<int>(active_ops.size());
+  std::vector<uint64_t> numForm((max_size + 1) * cols, 0);
 
-  for (int i = 3; i <= max_size; ++i) {
-    numOfUnaryFormulas = numForm[(i - 1) * 9 + 8];
-    numOfCommutBinaryFormulas = 0;
-    numOfNotCommutBinaryFormulas = 0;
-    for (int j = 1; j <= (i - 1) / 2; ++j) {
-      numOfCommutBinaryFormulas +=
-          numForm[j * 9 + 8] * numForm[(i - j - 1) * 9 + 8];
+  numForm[1 * cols + max_n_ops] = n_leaves;
+
+  for (int size = 2; size <= max_size; ++size) {
+    uint64_t total = 0;
+    for (int op = 0; op < n_ops; ++op) {
+      uint64_t count;
+      if (!active_ops[op].is_binary) {
+        count = numForm[(size - 1) * cols + max_n_ops];
+      } else if (op_commutes[op]) {
+        count = 0;
+        for (int j = 1; j <= (size - 1) / 2; ++j)
+          count += numForm[j * cols + max_n_ops] *
+                   numForm[(size - 1 - j) * cols + max_n_ops];
+      } else {
+        count = 0;
+        for (int j = 1; j <= size - 2; ++j)
+          count += numForm[j * cols + max_n_ops] *
+                   numForm[(size - 1 - j) * cols + max_n_ops];
+      }
+      numForm[size * cols + op] = count;
+      total += count;
     }
-    for (int j = 1; j <= i - 2; ++j) {
-      numOfNotCommutBinaryFormulas +=
-          numForm[j * 9 + 8] * numForm[(i - j - 1) * 9 + 8];
-    }
-    numForm[i * 9] = numOfUnaryFormulas;
-    numForm[i * 9 + 1] = numOfCommutBinaryFormulas;
-    numForm[i * 9 + 2] = numOfCommutBinaryFormulas;
-    numForm[i * 9 + 3] = numOfCommutBinaryFormulas;
-    numForm[i * 9 + 4] = numOfUnaryFormulas;
-    numForm[i * 9 + 5] = numOfCommutBinaryFormulas;
-    numForm[i * 9 + 6] = numOfNotCommutBinaryFormulas;
-    numForm[i * 9 + 7] = numOfCommutBinaryFormulas;
-    numForm[i * 9 + 8] = 2 * numOfUnaryFormulas +
-                         5 * numOfCommutBinaryFormulas +
-                         numOfNotCommutBinaryFormulas;
+    numForm[size * cols + max_n_ops] = total;
   }
 
-  printMatrix(numForm.data(), max_size + 1, 9);
+  printMatrix(numForm.data(), max_size + 1, cols);
   return numForm;
 }
 
-std::string MBAToString(const char *MBAFormula) {
+std::string MBAToString(const char *MBAFormula,
+                        const std::vector<uint32_t> &constants) {
   std::stack<std::string> stack;
   for (int i = 0; MBAFormula[i] != '\0'; ++i) {
     char token = MBAFormula[i];
 
     if (token >= '0' && token <= '9') {
       stack.push("v" + std::string(1, token));
+    } else if (token >= 'A' && token < 'A' + static_cast<int>(constants.size())) {
+      stack.push(std::to_string(constants[token - 'A']));
     } else {
       if (token == '~' || token == '#') {
         if (!stack.empty()) {
@@ -194,7 +219,9 @@ std::string MBAToString(const char *MBAFormula) {
 
 class NoCache {
 public:
-  static std::string solve(const MbaInstance &mba, const int max_size) {
+  static std::string solve(const MbaInstance &mba, const int max_size,
+                           const OpFlags &flags = OpFlags{},
+                           const std::vector<uint32_t> &constants = {}) {
     if (max_size > max_formula_size) {
       throw fmt::format("This version supports formulas of size at most {}",
                         max_formula_size);
@@ -210,11 +237,34 @@ public:
                         max_n_variables);
     }
 
-    // Copying number of vars, inputs and outputs into the constant memory
+    if (static_cast<int>(constants.size()) > max_n_constants) {
+      throw fmt::format("This version supports at most {} constants",
+                        max_n_constants);
+    }
+
+    // Copying number of vars, inputs, outputs and constants into the
+    // constant memory
     checkCuda(cudaMemcpyToSymbol(d_inputs, mba.inputs.data(),
                                  mba.inputs.size() * sizeof(uint32_t)));
     checkCuda(cudaMemcpyToSymbol(d_outputs, mba.outputs.data(),
                                  mba.outputs.size() * sizeof(uint32_t)));
+    if (!constants.empty())
+      checkCuda(cudaMemcpyToSymbol(d_constants, constants.data(),
+                                   constants.size() * sizeof(uint32_t)));
+
+    // Build the runtime active-op list from the flags, and upload it.
+    std::vector<ActiveOp> active_ops;
+    std::vector<bool> op_commutes;
+    build_active_ops<Not, And, Or, Xor, LShift, RShift, AShr, Neg, Add, Sub,
+                     Mul, Div, Mod, SDiv, SRem>(flags, active_ops,
+                                                op_commutes);
+    const int n_ops = static_cast<int>(active_ops.size());
+    if (n_ops > max_n_ops) {
+      throw fmt::format("This version supports at most {} active ops",
+                        max_n_ops);
+    }
+    checkCuda(cudaMemcpyToSymbol(d_activeOps, active_ops.data(),
+                                 active_ops.size() * sizeof(ActiveOp)));
 
     // Number of generated formulas
     uint64_t allMBAs{};
@@ -225,10 +275,12 @@ public:
 #endif
 
     // Number of formulas matrix
+    const int n_leaves = mba.n_variables + static_cast<int>(constants.size());
     std::vector<uint64_t> numForm =
-        compute_n_formulas(max_size, mba.n_variables);
+        compute_n_formulas(max_size, n_leaves, active_ops, op_commutes);
     checkCuda(cudaMemcpyToSymbol(d_numForm, numForm.data(),
-                                 (max_size + 1) * 9 * sizeof(uint64_t)));
+                                 (max_size + 1) * (max_n_ops + 1) *
+                                     sizeof(uint64_t)));
 
     // Memory allocation for the potential solution
     char *d_res;
@@ -245,9 +297,9 @@ public:
 
       offset = 0;
 
-      for (int i = 0; i < 8; ++i) {
+      for (int i = 0; i < n_ops; ++i) {
 
-        N = numForm[formula_size * 9 + i];
+        N = numForm[formula_size * (max_n_ops + 1) + i];
         blockSize = (N + 1023) / 1024;
         // #ifndef MEASUREMENT_MODE
         //         printf(
@@ -274,7 +326,7 @@ public:
     std::string output;
 
     if (res[0] != '\0') {
-      output = MBAToString(res);
+      output = MBAToString(res, constants);
     } else {
       output = "Not found !";
     }
@@ -290,11 +342,17 @@ int main(int argc, char *argv[]) {
   // Reading the input
   // -----------------
 
-  if (argc != 3) {
+  if (argc != 3 && argc != 4) {
     printf("Arguments should be in the form of\n");
     printf(
         "-----------------------------------------------------------------\n");
-    printf("%s <input_file_address> <maxLen>\n", argv[0]);
+    printf("%s <input_file_address> <maxLen> "
+          "[bitwise,arithmetic,shift,division]\n",
+          argv[0]);
+    printf("<input_file_address> may be a .json MbaInstance or a SyGuS-BV "
+          ".sl file.\n");
+    printf("The optional trailing argument, if given, replaces the default "
+          "enabled op groups.\n");
     printf(
         "-----------------------------------------------------------------\n");
     return 0;
@@ -307,8 +365,28 @@ int main(int argc, char *argv[]) {
   }
 
   std::string file_name = argv[1];
-  auto mba = MbaInstance::from_json_file(file_name);
   int max_size = atoi(argv[2]);
+
+  // Bitwise and arithmetic ops are enabled by default, matching this
+  // binary's original fixed ReducedOps set (Not, Neg, Add, Sub, And, Or,
+  // Xor, Mul); shift and division are opt-in.
+  OpFlags flags{};
+  std::vector<uint32_t> constants;
+
+  MbaInstance mba;
+  bool is_sygus_file =
+      file_name.size() >= 3 && file_name.substr(file_name.size() - 3) == ".sl";
+  if (is_sygus_file) {
+    SygusParseResult parsed = parse_sygus_bv_file(file_name);
+    mba = parsed.instance;
+    flags = parsed.flags;
+    constants = parsed.constants;
+  } else {
+    mba = MbaInstance::from_json_file(file_name);
+  }
+
+  if (argc == 4)
+    flags = parse_op_flags(argv[3]);
 
   // ------------------------------
   // Mixed Boolean Arithmetic (MBA)
@@ -318,7 +396,7 @@ int main(int argc, char *argv[]) {
   auto start = chrono::high_resolution_clock::now();
 #endif
 
-  std::string output = NoCache::solve(mba, max_size);
+  std::string output = NoCache::solve(mba, max_size, flags, constants);
   if (output == "see_the_error")
     return 0;
 

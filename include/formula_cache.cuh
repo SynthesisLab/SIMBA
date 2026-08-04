@@ -48,10 +48,16 @@ template <int MaxFormulaLen> struct FormulaCache {
 
   __host__ size_t get_n_formulas() { return end_index; }
 
-  __device__ char *build_variable(size_t index) {
+  // `index` ranges over [0, n_variables + n_constants). Indices below
+  // n_variables build a variable leaf ('0'+index, read from d_inputs);
+  // the rest build a constant leaf ('A'+(index-n_variables), read from
+  // d_constants). See mba.cuh for the matching evaluation-side decoding.
+  __device__ char *build_leaf(size_t index, int n_variables) {
     char *new_formula = d_temp_mba_cache + index * MaxFormulaLen;
 
-    new_formula[0] = '0' + index;
+    new_formula[0] = (index < static_cast<size_t>(n_variables))
+                         ? '0' + index
+                         : 'A' + (index - n_variables);
     new_formula[1] = '\0';
 
     return new_formula;

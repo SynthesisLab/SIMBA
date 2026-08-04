@@ -20,6 +20,9 @@ __device__ bool is_solution_rpn(char *formula, int formula_size,
         // Variables
         int var = token - '0';
         stack[++stack_index] = d_inputs[i * num_variables + var];
+      } else if (token >= 'A' && token <= 'A' + max_n_constants - 1) {
+        // Constants
+        stack[++stack_index] = d_constants[token - 'A'];
       } else {
         uint32_t left, right;
         if (token == '~' || token == '#') {
@@ -56,6 +59,30 @@ __device__ bool is_solution_rpn(char *formula, int formula_size,
           case '*':
             stack[stack_index] = left * right;
             break;
+          case '<':
+            stack[stack_index] = left << right;
+            break;
+          case '>':
+            stack[stack_index] = left >> right;
+            break;
+          case '/':
+            stack[stack_index] = left / right;
+            break;
+          case '%':
+            stack[stack_index] = left % right;
+            break;
+          case 'a':
+            stack[stack_index] =
+                static_cast<uint32_t>(static_cast<int32_t>(left) >> right);
+            break;
+          case 'q':
+            stack[stack_index] = static_cast<uint32_t>(
+                static_cast<int32_t>(left) / static_cast<int32_t>(right));
+            break;
+          case 'r':
+            stack[stack_index] = static_cast<uint32_t>(
+                static_cast<int32_t>(left) % static_cast<int32_t>(right));
+            break;
           }
         }
       }
@@ -80,6 +107,8 @@ __device__ uint32_t evaluateRPN(char *formula, int sample_index,
     if (token >= '0' && token <= '9') {
       int var = token - '0';
       stack[++stack_index] = d_inputs[sample_index * num_variables + var];
+    } else if (token >= 'A' && token <= 'A' + max_n_constants - 1) {
+      stack[++stack_index] = d_constants[token - 'A'];
     } else {
       uint32_t left, right;
       if (token == '~' || token == '#') {
@@ -121,6 +150,18 @@ __device__ uint32_t evaluateRPN(char *formula, int sample_index,
           break;
         case '%':
           stack[stack_index] = left % right;
+          break;
+        case 'a':
+          stack[stack_index] =
+              static_cast<uint32_t>(static_cast<int32_t>(left) >> right);
+          break;
+        case 'q':
+          stack[stack_index] = static_cast<uint32_t>(
+              static_cast<int32_t>(left) / static_cast<int32_t>(right));
+          break;
+        case 'r':
+          stack[stack_index] = static_cast<uint32_t>(
+              static_cast<int32_t>(left) % static_cast<int32_t>(right));
           break;
         }
       }

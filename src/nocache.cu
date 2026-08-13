@@ -9,19 +9,21 @@
 #include <format>
 #include <stack>
 #include <vector>
-
+#include <cuda/cmath>
 #define MEASUREMENT_MODE
 
 __device__ int solution_found = 0;
 
-struct StackEntry {
+struct StackEntry
+{
   uint64_t n;
   int size;
   int shift;
 };
 
 __device__ void numberToFormula(uint64_t n, int size,
-                                char formula[maxFormulaSize]) {
+                                char formula[maxFormulaSize])
+{
 
   StackEntry stack[maxFormulaSize];
   int shift = 0;
@@ -34,7 +36,8 @@ __device__ void numberToFormula(uint64_t n, int size,
   int fIdx;
   uint64_t rightsum;
 
-  while (stackIdx >= 0) {
+  while (stackIdx >= 0)
+  {
 
     StackEntry entry = stack[stackIdx--];
     n = entry.n;
@@ -44,7 +47,8 @@ __device__ void numberToFormula(uint64_t n, int size,
     if (size == 1)
       formula[shift] = '0' + n;
 
-    else {
+    else
+    {
 
       opPartsum = 0;
       opIdx = 0;
@@ -62,13 +66,15 @@ __device__ void numberToFormula(uint64_t n, int size,
       if (opIdx == 0 || opIdx == 4)
         stack[++stackIdx] = {n, size, shift};
 
-      else {
+      else
+      {
 
         fPartsum = 0;
         fIdx = 1;
 
         // Operator is binary : Find the sizes of the operands
-        while (n >= fPartsum + d_numForm[fIdx][8] * d_numForm[size - fIdx][8]) {
+        while (n >= fPartsum + d_numForm[fIdx][8] * d_numForm[size - fIdx][8])
+        {
           fPartsum += d_numForm[fIdx][8] * d_numForm[size - fIdx][8];
           fIdx++;
         }
@@ -84,61 +90,104 @@ __device__ void numberToFormula(uint64_t n, int size,
 
 __global__ void processOperator(const int n_examples, const int n_variables,
                                 int formula_size, uint64_t offset,
-                                uint64_t n_threads, char *d_res) {
+                                uint64_t n_threads, char *d_res)
+{
 
   uint64_t tid =
       static_cast<uint64_t>(blockDim.x) * static_cast<uint64_t>(blockIdx.x) +
       static_cast<uint64_t>(threadIdx.x);
 
-  if (tid < n_threads) {
+  if (tid < n_threads)
+  {
 
     tid += offset;
 
     char formula[maxFormulaSize];
     numberToFormula(tid, formula_size, formula);
-    bool found =
+    int opIdx =
         is_solution_rpn(formula, formula_size, n_examples, n_variables);
-
+    bool found = opIdx >= 0;
     if (found)
-      if (atomicCAS(&solution_found, 0, 1) == 0)
-        for (int i = 0; i < formula_size; ++i)
+      if (atomicCAS(&solution_found, 0, 1) == 0){
+        for (int i = 0; i < formula_size - 1; ++i)
           d_res[i] = formula[i];
+        switch (opIdx)
+        {
+        case 1:
+          formula[formulaSize - 1] = '~';
+          break;
+        case 2:
+          formula[formulaSize - 1] = '#';
+          break;
+        case 3:
+          formula[formulaSize - 1] = '&';
+          break;
+        case 4:
+          formula[formulaSize - 1] = '|';
+          break;
+        case 5:
+          formula[formulaSize - 1] = '^';
+          break;
+        case 6:
+          formula[formulaSize - 1] = '+';
+          break;
+        case 7:
+          formula[formulaSize - 1] = '-';
+          break;
+        case 8:
+          formula[formulaSize - 1] = '*';
+          break;
+
+        default:
+          break;
+        }
+      }
+       
   }
 }
 
-void printMatrix(uint64_t *matrix, int m, int n) {
-  for (int i = 0; i < m; ++i) {
+void printMatrix(uint64_t *matrix, int m, int n)
+{
+  for (int i = 0; i < m; ++i)
+  {
     for (int j = 0; j < n; ++j)
       fprintf(stderr, "%-12lu ", matrix[i * n + j]);
     fprintf(stderr, "\n");
   }
 }
 
-std::vector<uint64_t> compute_n_formulas(int max_size, int n_variables) {
+std::tuple<std::vector<uint64_t>, std::vector<uint64_t>, std::vector<uint64_t>> compute_n_formulas(int max_size, int n_variables)
+{
 
   // Last column is the number of formulas of the given size
   std::vector<uint64_t> numForm((max_size + 1) * 9, 0);
+  std::vector<uint64_t> unaryForm((max_size + 1) * 9, 0);
+  std::vector<uint64_t> binaryForm((max_size + 1) * 9, 0);
 
   // Initialisation with variables and unary operators
   numForm[1 * 9 + 8] = n_variables;
   numForm[2 * 9 + 0] = n_variables;
   numForm[2 * 9 + 4] = n_variables;
   numForm[2 * 9 + 8] = 2 * n_variables;
+  unaryForm[2 * 9 + 8] = 2 * n_variables;
 
   // Generation
   uint64_t numOfUnaryFormulas;
   uint64_t numOfCommutBinaryFormulas;
   uint64_t numOfNotCommutBinaryFormulas;
 
-  for (int i = 3; i <= max_size; ++i) {
+  for (int i = 3; i <= max_size; ++i)
+  {
     numOfUnaryFormulas = numForm[(i - 1) * 9 + 8];
     numOfCommutBinaryFormulas = 0;
     numOfNotCommutBinaryFormulas = 0;
-    for (int j = 1; j <= (i - 1) / 2; ++j) {
+    for (int j = 1; j <= (i - 1) / 2; ++j)
+    {
       numOfCommutBinaryFormulas +=
           numForm[j * 9 + 8] * numForm[(i - j - 1) * 9 + 8];
     }
-    for (int j = 1; j <= i - 2; ++j) {
+    for (int j = 1; j <= i - 2; ++j)
+    {
       numOfNotCommutBinaryFormulas +=
           numForm[j * 9 + 8] * numForm[(i - j - 1) * 9 + 8];
     }
@@ -153,28 +202,58 @@ std::vector<uint64_t> compute_n_formulas(int max_size, int n_variables) {
     numForm[i * 9 + 8] = 2 * numOfUnaryFormulas +
                          5 * numOfCommutBinaryFormulas +
                          numOfNotCommutBinaryFormulas;
+
+    unaryForm[i * 9] = numOfUnaryFormulas;
+    unaryForm[i * 9 + 1] = 0;
+    unaryForm[i * 9 + 2] = 0;
+    unaryForm[i * 9 + 3] = 0;
+    unaryForm[i * 9 + 4] = numOfUnaryFormulas;
+    unaryForm[i * 9 + 5] = 0;
+    unaryForm[i * 9 + 6] = 0;
+    unaryForm[i * 9 + 7] = 0;
+    unaryForm[i * 9 + 8] = 2 * numOfUnaryFormulas;
+
+    binaryForm[i * 9] = 0;
+    binaryForm[i * 9 + 1] = numOfCommutBinaryFormulas;
+    binaryForm[i * 9 + 2] = numOfCommutBinaryFormulas;
+    binaryForm[i * 9 + 3] = numOfCommutBinaryFormulas;
+    binaryForm[i * 9 + 4] = 0;
+    binaryForm[i * 9 + 5] = numOfCommutBinaryFormulas;
+    binaryForm[i * 9 + 6] = numOfNotCommutBinaryFormulas;
+    binaryForm[i * 9 + 7] = numOfCommutBinaryFormulas;
+    binaryForm[i * 9 + 8] = 5 * numOfCommutBinaryFormulas +
+                            numOfNotCommutBinaryFormulas;
   }
 
   printMatrix(numForm.data(), max_size + 1, 9);
-  return numForm;
+  return {numForm, unaryForm, binaryForm};
 }
 
-std::string MBAToString(const char *MBAFormula) {
+std::string MBAToString(const char *MBAFormula)
+{
   std::stack<std::string> stack;
-  for (int i = 0; MBAFormula[i] != '\0'; ++i) {
+  for (int i = 0; MBAFormula[i] != '\0'; ++i)
+  {
     char token = MBAFormula[i];
 
-    if (token >= '0' && token <= '9') {
+    if (token >= '0' && token <= '9')
+    {
       stack.push("v" + std::string(1, token));
-    } else {
-      if (token == '~' || token == '#') {
-        if (!stack.empty()) {
+    }
+    else
+    {
+      if (token == '~' || token == '#')
+      {
+        if (!stack.empty())
+        {
           std::string operand = stack.top();
           stack.pop();
           std::string op = (token == '#') ? "-" : "~";
           stack.push("(" + op + operand + ")");
         }
-      } else {
+      }
+      else
+      {
         if (stack.size() < 2)
           return std::format("Error : Incorrect formula (stack size < 2). {}\n",
                              MBAFormula);
@@ -194,20 +273,25 @@ std::string MBAToString(const char *MBAFormula) {
   return stack.top();
 }
 
-class NoCache {
+class NoCache
+{
 public:
-  static std::string solve(const MbaInstance &mba, const int max_size) {
-    if (max_size > maxFormulaSize) {
+  static std::string solve(const MbaInstance &mba, const int max_size)
+  {
+    if (max_size > maxFormulaSize)
+    {
       throw std::format("This version supports formulas of size at most {}",
                         maxFormulaSize);
     }
 
-    if (mba.n_examples > maxNumOfSamples) {
+    if (mba.n_examples > maxNumOfSamples)
+    {
       throw std::format("This version supports at most {} samples",
                         maxNumOfSamples);
     }
 
-    if (mba.n_variables > maxNumOfVars) {
+    if (mba.n_variables > maxNumOfVars)
+    {
       throw std::format("This version supports at most {} variables",
                         maxNumOfVars);
     }
@@ -228,8 +312,10 @@ public:
 #endif
 
     // Number of formulas matrix
-    std::vector<uint64_t> numForm =
-        compute_n_formulas(max_size, mba.n_variables);
+    std::vector<uint64_t> numForm;
+    std::vector<uint64_t> unaryForm;
+    std::vector<uint64_t> binaryForm;
+    std::tie(numForm, unaryForm, binaryForm) = compute_n_formulas(max_size, mba.n_variables);
     checkCuda(cudaMemcpyToSymbol(d_numForm, numForm.data(),
                                  (max_size + 1) * 9 * sizeof(uint64_t)));
 
@@ -240,18 +326,23 @@ public:
     char res[maxFormulaSize] = {0};
 
     uint64_t offset;
-    uint64_t N;
+    uint64_t N, U, B;
     uint64_t blockSize;
     bool stop = false;
     for (int formula_size = 1; formula_size < max_size && !stop;
-         ++formula_size) {
+         ++formula_size)
+    {
 
       offset = 0;
 
-      for (int i = 0; i < 8; ++i) {
+      for (int i = 0; i < 8; ++i)
+      {
 
         N = numForm[formula_size * 9 + i];
-        blockSize = (N + 1023) / 1024;
+        U = unaryForm[formula_size * 9 + i];
+        B = binaryForm[formula_size * 9 + i];
+
+        blockSize = cuda::ceil_div(N - U / 2 - B / 5, 1024);
 #ifndef MEASUREMENT_MODE
         fprintf(
             stderr,
@@ -268,7 +359,8 @@ public:
         checkCuda(cudaMemcpy(res, d_res, maxFormulaSize * sizeof(char),
                              cudaMemcpyDeviceToHost));
 
-        if (res[0] != '\0') {
+        if (res[0] != '\0')
+        {
           stop = true;
           break;
         }
@@ -277,9 +369,12 @@ public:
 
     std::string output;
 
-    if (res[0] != '\0') {
+    if (res[0] != '\0')
+    {
       output = MBAToString(res);
-    } else {
+    }
+    else
+    {
       output = "Not found !";
     }
 
@@ -288,13 +383,15 @@ public:
   }
 };
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
   // -----------------
   // Reading the input
   // -----------------
 
-  if (argc != 3) {
+  if (argc != 3)
+  {
     fprintf(stderr, "Arguments should be in the form of\n");
     fprintf(
         stderr,
@@ -306,7 +403,8 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  if (atoi(argv[2]) < 1 || atoi(argv[2]) > 50) {
+  if (atoi(argv[2]) < 1 || atoi(argv[2]) > 50)
+  {
     fprintf(stderr, "Argument maxLen = %s should be between 1 and %d", argv[2],
             maxFormulaSize);
     return 0;

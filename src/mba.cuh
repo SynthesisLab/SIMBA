@@ -3,7 +3,6 @@
 #include "globals.cuh"
 
 // Test whether the given LTLf formula is a solution.
-
 #define UNARY_MASK (3 << 1)
 #define VAR_MASK (1)
 #define BINARY_MASK ((3 << 3) + (3 << 5) + (3 << 6) )
@@ -13,7 +12,7 @@ __device__ int is_solution_rpn(char *formula, int formula_size,
 {
   uint32_t stack[maxFormulaSize];
   int stack_index;
-  int valids = 0;
+  uint32_t valids = 0;
   char last_token = formula[formula_size - 1];
   bool unary = (last_token == '~') || (last_token == '#');
   bool var_only = last_token >= '0' && last_token <= '9';
@@ -99,29 +98,27 @@ __device__ int is_solution_rpn(char *formula, int formula_size,
     if (unary)
     {
       uint32_t result = stack[0];
-      if (~result != target)
-        valids ^= (1 << 1) & valids;
-      if (-result != target)
-        valids ^= (1 << 2) & valids;
+      uint32_t mask = (-result != target) << 1;
+      mask |= (~result != target);
+      mask <<= 1;
+      valids ^= mask & valids;
+      if (valids == 0)
+        return -1;
     }
     else if (binary)
     {
       uint32_t left = stack[0];
       uint32_t right = stack[1];
 
-      if ((left & right) != target){
-        valids ^= (1 << 3) & valids;
-      }
-      if ((left | right) != target)
-        valids ^= (1 << 4) & valids;
-      if ((left ^ right) != target)
-        valids ^= (1 << 5) & valids;
-      if ((left + right) != target)
-        valids ^= (1 << 6) & valids;
-      if ((left - right) != target)
-        valids ^= (1 << 7) & valids;
-      if ((left * right) != target)
-        valids ^= (1 << 8) & valids;
+      uint32_t mask = ((left * right) != target) << 8;
+      mask |= ((left - right) != target) << 7;
+      mask |= ((left + right) != target) << 6;
+      mask |= ((left ^ right) != target) << 5;
+      mask |= ((left | right) != target) << 4;
+      mask |= ((left & right) != target) << 3;
+      valids ^= mask & valids;
+      if (valids == 0)
+        return -1;
     }
     else
     {
@@ -129,9 +126,7 @@ __device__ int is_solution_rpn(char *formula, int formula_size,
       if (result != target)
         return -1;
     }
-
-    if (valids == 0)
-      return -1;
+    
   }
 
   return valids;

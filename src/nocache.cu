@@ -56,8 +56,15 @@ __device__ void numberToFormula(uint64_t n, int size,
       // Find the next operator
       while (n >= opPartsum + d_numForm[size][opIdx])
         opPartsum += d_numForm[size][opIdx++];
-      while (d_numForm[size][opIdx] == 0)
-        opIdx--;
+      // This (just underneath) is NEVER called here is why
+      // At this point is true that:
+      // (*) n < opPartsum + d_numForm[size][opIdx]
+      // and either - (A) opIdx == 0
+      //            - (B) n >= opPartsum
+      // (A) then opIdx should not be negative therefore this condition must never occur.
+      // (B) if d_numForm[size][opIdx] is 0 then it is a contradiction because of (*) and (B).
+      // while (d_numForm[size][opIdx] == 0)
+      //   opIdx--;
       n -= opPartsum;
 
       size--;
@@ -73,14 +80,14 @@ __device__ void numberToFormula(uint64_t n, int size,
         fIdx = 1;
 
         // Operator is binary : Find the sizes of the operands
-        while (n >= fPartsum + d_numForm[fIdx][8] * d_numForm[size - fIdx][8])
+        while (n >= fPartsum + d_numFormT[fIdx] * d_numFormT[size - fIdx])
         {
-          fPartsum += d_numForm[fIdx][8] * d_numForm[size - fIdx][8];
+          fPartsum += d_numFormT[fIdx] * d_numFormT[size - fIdx];
           fIdx++;
         }
         n -= fPartsum;
 
-        rightsum = d_numForm[size - fIdx][8];
+        rightsum = d_numFormT[size - fIdx];
         stack[++stackIdx] = {n / rightsum, fIdx, shift};
         stack[++stackIdx] = {n % rightsum, size - fIdx, shift + fIdx};
       }
@@ -114,28 +121,28 @@ __global__ void processOperator(const int n_examples, const int n_variables,
         switch (opIdx)
         {
         case 1:
-          formula[formulaSize - 1] = '~';
+          d_res[formula_size - 1] = '~';
           break;
         case 2:
-          formula[formulaSize - 1] = '#';
+          d_res[formula_size - 1] = '#';
           break;
         case 3:
-          formula[formulaSize - 1] = '&';
+          d_res[formula_size - 1] = '&';
           break;
         case 4:
-          formula[formulaSize - 1] = '|';
+          d_res[formula_size - 1] = '|';
           break;
         case 5:
-          formula[formulaSize - 1] = '^';
+          d_res[formula_size - 1] = '^';
           break;
         case 6:
-          formula[formulaSize - 1] = '+';
+          d_res[formula_size - 1] = '+';
           break;
         case 7:
-          formula[formulaSize - 1] = '-';
+          d_res[formula_size - 1] = '-';
           break;
         case 8:
-          formula[formulaSize - 1] = '*';
+          d_res[formula_size - 1] = '*';
           break;
 
         default:
@@ -318,6 +325,14 @@ public:
     std::tie(numForm, unaryForm, binaryForm) = compute_n_formulas(max_size, mba.n_variables);
     checkCuda(cudaMemcpyToSymbol(d_numForm, numForm.data(),
                                  (max_size + 1) * 9 * sizeof(uint64_t)));
+    uint64_t transpose[max_size + 1];
+    for (size_t i = 0; i < max_size + 1; i++)
+    {
+      transpose[i] = numForm[i * 9 + 8];
+    }
+    
+    checkCuda(cudaMemcpyToSymbol(d_numFormT, &transpose,
+                                 (max_size + 1) * sizeof(uint64_t)));
 
     // Memory allocation for the potential solution
     char *d_res;

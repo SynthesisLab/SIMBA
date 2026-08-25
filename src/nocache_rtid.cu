@@ -6,8 +6,8 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <format>
 #include <stack>
+#include <string>
 #include <vector>
 
 #define MEASUREMENT_MODE
@@ -100,13 +100,45 @@ __global__ void processOperator(const int n_examples, const int n_variables,
 
     char formula[maxFormulaSize];
     numberToFormula(tid, formula_size, formula);
-    bool found =
+    int opIdx =
         is_solution_rpn(formula, formula_size, n_examples, n_variables);
+    bool found = opIdx >= 0;
 
     if (found)
       if (atomicCAS(&solution_found, 0, 1) == 0)
-        for (int i = 0; i < formula_size; ++i)
+      {
+        for (int i = 0; i < formula_size - 1; ++i)
           d_res[i] = formula[i];
+        switch (opIdx)
+        {
+        case 1:
+          d_res[formula_size - 1] = '~';
+          break;
+        case 2:
+          d_res[formula_size - 1] = '#';
+          break;
+        case 3:
+          d_res[formula_size - 1] = '&';
+          break;
+        case 4:
+          d_res[formula_size - 1] = '|';
+          break;
+        case 5:
+          d_res[formula_size - 1] = '^';
+          break;
+        case 6:
+          d_res[formula_size - 1] = '+';
+          break;
+        case 7:
+          d_res[formula_size - 1] = '-';
+          break;
+        case 8:
+          d_res[formula_size - 1] = '*';
+          break;
+        default:
+          break;
+        }
+      }
   }
 }
 
@@ -180,8 +212,8 @@ std::string MBAToString(const char *MBAFormula) {
         }
       } else {
         if (stack.size() < 2)
-          return std::format("Error : Incorrect formula (stack size < 2). {}\n",
-                             MBAFormula);
+          return std::string("Error : Incorrect formula (stack size < 2). ") +
+                 MBAFormula + "\n";
         std::string right = stack.top();
         stack.pop();
         std::string left = stack.top();
@@ -193,8 +225,8 @@ std::string MBAToString(const char *MBAFormula) {
   }
 
   if (stack.size() != 1)
-    return std::format("Error : Incorrect formula (stack size != 2). {}\n",
-                       MBAFormula);
+    return std::string("Error : Incorrect formula (stack size != 2). ") +
+           MBAFormula + "\n";
   return stack.top();
 }
 
@@ -202,18 +234,18 @@ class NoCache {
 public:
   static std::string solve(const MbaInstance &mba, const int max_size) {
     if (max_size > maxFormulaSize) {
-      throw std::format("This version supports formulas of size at most {}",
-                        maxFormulaSize);
+      throw std::string("This version supports formulas of size at most ") +
+          std::to_string(maxFormulaSize);
     }
 
     if (mba.n_examples > maxNumOfSamples) {
-      throw std::format("This version supports at most {} samples",
-                        maxNumOfSamples);
+      throw std::string("This version supports at most ") +
+          std::to_string(maxNumOfSamples) + " samples";
     }
 
     if (mba.n_variables > maxNumOfVars) {
-      throw std::format("This version supports at most {} variables",
-                        maxNumOfVars);
+      throw std::string("This version supports at most ") +
+          std::to_string(maxNumOfVars) + " variables";
     }
 
     // Copying number of vars, inputs and outputs into the constant memory

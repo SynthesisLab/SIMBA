@@ -14,146 +14,118 @@
 
 __device__ int solution_found = 0;
 
-struct StackEntry
-{
-  uint64_t n;
-  int size;
-  int shift;
-};
-
-__device__ void numberToFormula(uint64_t n, int size,
-                                char formula[maxFormulaSize])
+__device__ void numberToFormula(LARGE_UINT n, int size,
+                                uint64_t &f0, uint64_t &f1, uint64_t &f2, uint64_t &f3)
 {
 
-  StackEntry stack[maxFormulaSize];
-  int shift = 0;
-  stack[0] = {n, size, shift};
-  int stackIdx = 0;
-
-  uint64_t opPartsum;
-  int opIdx;
-  uint64_t fPartsum;
-  int fIdx;
-  uint64_t rightsum;
-
-  while (stackIdx >= 0)
+  LARGE_UINT n_stack[maxFormulaSize / 2];
+  uint8_t size_stack[maxFormulaSize / 2];
+  uint8_t pos = size - 1;
+  int stackIdx = -1;
+  
+  while (true)
   {
-
-    StackEntry entry = stack[stackIdx--];
-    n = entry.n;
-    size = entry.size;
-    shift = entry.shift;
-
-    if (size == 1)
-      formula[shift] = '0' + n;
-
-    else
-    {
-
-      opPartsum = 0;
-      opIdx = 0;
-
-      // Find the next operator
-      while (n >= opPartsum + d_numForm[size][opIdx])
-        opPartsum += d_numForm[size][opIdx++];
-      // This (just underneath) is NEVER called here is why
-      // At this point is true that:
-      // (*) n < opPartsum + d_numForm[size][opIdx]
-      // and either - (A) opIdx == 0
-      //            - (B) n >= opPartsum
-      // (A) then opIdx should not be negative therefore this condition must never occur.
-      // (B) if d_numForm[size][opIdx] is 0 then it is a contradiction because of (*) and (B).
-      // while (d_numForm[size][opIdx] == 0)
-      //   opIdx--;
-      n -= opPartsum;
+    if(size == 1){
+      setFormulaChar(f0, f1, f2, f3, pos--, '0' + n);
+      if(stackIdx < 0)
+        break;
+      n = n_stack[stackIdx];
+      size = size_stack[stackIdx--];
+    } else {
+      uint8_t opIdx = 0;
+      opIdx += n >= d_numForm[size][0];
+      opIdx += n >= d_numForm[size][1];
+      opIdx += n >= d_numForm[size][2];
+      opIdx += n >= d_numForm[size][3];
+      opIdx += n >= d_numForm[size][4];
+      opIdx += n >= d_numForm[size][5];
+      opIdx += n >= d_numForm[size][6];
+      if(opIdx)
+        n -= d_numForm[size][opIdx - 1];
 
       size--;
-      formula[shift + size] = d_opChar[opIdx];
+      setFormulaChar(f0, f1, f2, f3, pos--, d_opChar[opIdx]);
 
-      if (opIdx == 0 || opIdx == 4)
-        stack[++stackIdx] = {n, size, shift};
-
-      else
+      if (!(opIdx == 0 || opIdx == 4))
       {
+        uint8_t fIdx = 1;
 
-        fPartsum = 0;
-        fIdx = 1;
-
-        // Operator is binary : Find the sizes of the operands
-        while (n >= fPartsum + d_numFormT[fIdx] * d_numFormT[size - fIdx])
+        while (n >= d_numFormP[size - 1][fIdx - 1])
         {
-          fPartsum += d_numFormT[fIdx] * d_numFormT[size - fIdx];
+          n -= d_numFormP[size - 1][fIdx - 1];
           fIdx++;
         }
-        n -= fPartsum;
 
-        rightsum = d_numFormT[size - fIdx];
-        stack[++stackIdx] = {n / rightsum, fIdx, shift};
-        stack[++stackIdx] = {n % rightsum, size - fIdx, shift + fIdx};
+        LARGE_UINT rightsum = d_numFormUncum[size - fIdx];
+        n_stack[++stackIdx] = n / rightsum;
+        size_stack[stackIdx] = fIdx;
+        n = n % rightsum;
+        size = size - fIdx;
       }
     }
   }
 }
 
+
+__device__ __forceinline__ char operator_char_from_index(int opIdx)
+{
+  switch (opIdx)
+  {
+  case 1:
+    return '~';
+  case 2:
+    return '#';
+  case 3:
+    return '&';
+  case 4:
+    return '|';
+  case 5:
+    return '^';
+  case 6:
+    return '+';
+  case 7:
+    return '-';
+  case 8:
+    return '*';
+  default:
+    return '\0';
+  }
+}
+
 __global__ void processOperator(const int n_examples, const int n_variables,
-                                int formula_size, uint64_t offset,
-                                uint64_t n_threads, char *d_res)
+                                int formula_size, LARGE_UINT offset,
+                                LARGE_UINT n_threads, char *d_res)
 {
 
-  uint64_t tid =
-      static_cast<uint64_t>(blockDim.x) * static_cast<uint64_t>(blockIdx.x) +
-      static_cast<uint64_t>(threadIdx.x);
+  LARGE_UINT tid =
+      static_cast<LARGE_UINT>(blockDim.x) * static_cast<LARGE_UINT>(blockIdx.x) +
+      static_cast<LARGE_UINT>(threadIdx.x);
 
   if (tid < n_threads)
   {
 
     tid += offset;
 
-    char formula[maxFormulaSize];
-    numberToFormula(tid, formula_size, formula);
+    uint64_t f0 = 0, f1 = 0, f2 = 0, f3 = 0;
+    numberToFormula(tid, formula_size, f0, f1, f2, f3);
     int opIdx =
-        is_solution_rpn(formula, formula_size, n_examples, n_variables);
+        is_solution_rpn(f0, f1, f2, f3, formula_size, n_examples, n_variables);
     bool found = opIdx >= 0;
     if (found)
       if (atomicCAS(&solution_found, 0, 1) == 0){
         for (int i = 0; i < formula_size - 1; ++i)
-          d_res[i] = formula[i];
-        switch (opIdx)
-        {
-        case 1:
-          d_res[formula_size - 1] = '~';
-          break;
-        case 2:
-          d_res[formula_size - 1] = '#';
-          break;
-        case 3:
-          d_res[formula_size - 1] = '&';
-          break;
-        case 4:
-          d_res[formula_size - 1] = '|';
-          break;
-        case 5:
-          d_res[formula_size - 1] = '^';
-          break;
-        case 6:
-          d_res[formula_size - 1] = '+';
-          break;
-        case 7:
-          d_res[formula_size - 1] = '-';
-          break;
-        case 8:
-          d_res[formula_size - 1] = '*';
-          break;
-
-        default:
-          break;
+          d_res[i] = getFormulaChar(f0, f1, f2, f3, i);
+        if(opIdx == 0){
+          d_res[formula_size - 1] = getFormulaChar(f0, f1, f2, f3, formula_size - 1);
+        } else {
+          d_res[formula_size - 1] = operator_char_from_index(opIdx);
         }
       }
        
   }
 }
 
-void printMatrix(uint64_t *matrix, int m, int n)
+void printMatrix(LARGE_UINT *matrix, int m, int n)
 {
   for (int i = 0; i < m; ++i)
   {
@@ -163,13 +135,50 @@ void printMatrix(uint64_t *matrix, int m, int n)
   }
 }
 
-std::tuple<std::vector<uint64_t>, std::vector<uint64_t>, std::vector<uint64_t>> compute_n_formulas(int max_size, int n_variables)
+using u128 = unsigned __int128;
+
+constexpr LARGE_UINT maxSignedInt128()
+{
+  return (static_cast<u128>(1) << 127) - 1;
+}
+
+bool checkedAdd128(LARGE_UINT a, LARGE_UINT b, LARGE_UINT &result)
+{
+  if (a > maxSignedInt128() - b)
+    return false;
+  result = a + b;
+  return true;
+}
+
+bool checkedMul128(LARGE_UINT a, LARGE_UINT b, LARGE_UINT &result)
+{
+  if (a != 0 && b > maxSignedInt128() / a)
+    return false;
+  result = a * b;
+  return true;
+}
+
+bool checkedAddProduct128(LARGE_UINT &sum, LARGE_UINT a, LARGE_UINT b)
+{
+  LARGE_UINT product;
+  if (!checkedMul128(a, b, product))
+    return false;
+  return checkedAdd128(sum, product, sum);
+}
+
+bool fitsUint64(LARGE_UINT value)
+{
+  return value <= static_cast<u128>(UINT64_MAX);
+}
+
+std::tuple<std::vector<LARGE_UINT>, std::vector<LARGE_UINT>, std::vector<LARGE_UINT>, std::vector<LARGE_UINT>> compute_n_formulas(int max_size, int n_variables)
 {
 
   // Last column is the number of formulas of the given size
-  std::vector<uint64_t> numForm((max_size + 1) * 9, 0);
-  std::vector<uint64_t> unaryForm((max_size + 1) * 9, 0);
-  std::vector<uint64_t> binaryForm((max_size + 1) * 9, 0);
+  std::vector<LARGE_UINT> numForm((max_size + 1) * 9, 0);
+  std::vector<LARGE_UINT> unaryForm((max_size + 1) * 9, 0);
+  std::vector<LARGE_UINT> binaryForm((max_size + 1) * 9, 0);
+  std::vector<LARGE_UINT> numFormCumulative((max_size + 1) * 9, 0);
 
   // Initialisation with variables and unary operators
   numForm[1 * 9 + 8] = n_variables;
@@ -182,6 +191,8 @@ std::tuple<std::vector<uint64_t>, std::vector<uint64_t>, std::vector<uint64_t>> 
   uint64_t numOfUnaryFormulas;
   uint64_t numOfCommutBinaryFormulas;
   uint64_t numOfNotCommutBinaryFormulas;
+  bool overflow128 = false;
+  bool overflow64 = false;
 
   for (int i = 3; i <= max_size; ++i)
   {
@@ -190,14 +201,35 @@ std::tuple<std::vector<uint64_t>, std::vector<uint64_t>, std::vector<uint64_t>> 
     numOfNotCommutBinaryFormulas = 0;
     for (int j = 1; j <= (i - 1) / 2; ++j)
     {
-      numOfCommutBinaryFormulas +=
-          numForm[j * 9 + 8] * numForm[(i - j - 1) * 9 + 8];
+      if (!checkedAddProduct128(numOfCommutBinaryFormulas,
+                                numForm[j * 9 + 8],
+                                numForm[(i - j - 1) * 9 + 8]))
+      {
+        fprintf(stderr, "Error: d_numForm precomputation overflowed 128 bits at formula size %d.\n", i);
+        overflow128 = true;
+      }
     }
     for (int j = 1; j <= i - 2; ++j)
     {
-      numOfNotCommutBinaryFormulas +=
-          numForm[j * 9 + 8] * numForm[(i - j - 1) * 9 + 8];
+      if (!checkedAddProduct128(numOfNotCommutBinaryFormulas,
+                                numForm[j * 9 + 8],
+                                numForm[(i - j - 1) * 9 + 8]))
+      {
+        fprintf(stderr, "Error: d_numForm precomputation overflowed 128 bits at formula size %d.\n", i);
+        overflow128 = true;
+      }
     }
+    LARGE_UINT total = 0;
+    LARGE_UINT term = 0;
+    if (!checkedMul128(2, numOfUnaryFormulas, total) ||
+        !checkedMul128(5, numOfCommutBinaryFormulas, term) ||
+        !checkedAdd128(total, term, total) ||
+        !checkedAdd128(total, numOfNotCommutBinaryFormulas, total))
+    {
+      fprintf(stderr, "Error: d_numForm precomputation overflowed 128 bits at formula size %d.\n", i);
+      overflow128 = true;
+    }
+
     numForm[i * 9] = numOfUnaryFormulas;
     numForm[i * 9 + 1] = numOfCommutBinaryFormulas;
     numForm[i * 9 + 2] = numOfCommutBinaryFormulas;
@@ -206,9 +238,13 @@ std::tuple<std::vector<uint64_t>, std::vector<uint64_t>, std::vector<uint64_t>> 
     numForm[i * 9 + 5] = numOfCommutBinaryFormulas;
     numForm[i * 9 + 6] = numOfNotCommutBinaryFormulas;
     numForm[i * 9 + 7] = numOfCommutBinaryFormulas;
-    numForm[i * 9 + 8] = 2 * numOfUnaryFormulas +
-                         5 * numOfCommutBinaryFormulas +
-                         numOfNotCommutBinaryFormulas;
+    numForm[i * 9 + 8] = total;
+
+    for (int j = 0; j < 9; ++j)
+    {
+      if (!fitsUint64(numForm[i * 9 + j]))
+        overflow64 = true;
+    }
 
     unaryForm[i * 9] = numOfUnaryFormulas;
     unaryForm[i * 9 + 1] = 0;
@@ -229,11 +265,31 @@ std::tuple<std::vector<uint64_t>, std::vector<uint64_t>, std::vector<uint64_t>> 
     binaryForm[i * 9 + 6] = numOfNotCommutBinaryFormulas;
     binaryForm[i * 9 + 7] = numOfCommutBinaryFormulas;
     binaryForm[i * 9 + 8] = 5 * numOfCommutBinaryFormulas +
-                            numOfNotCommutBinaryFormulas;
+                                                    numOfNotCommutBinaryFormulas;
   }
 
+  for (int i = 1; i <= max_size; ++i)
+  {
+    LARGE_UINT cumulative = 0;
+    for (int j = 0; j < 9; ++j)
+    {
+      if (!checkedAdd128(cumulative, numForm[i * 9 + j], cumulative))
+      {
+        fprintf(stderr, "Error: d_numForm cumulative precomputation overflowed 128 bits at formula size %d.\n", i);
+        overflow128 = true;
+      }
+      numFormCumulative[i * 9 + j] = cumulative;
+    }
+    //numFormCumulative[i * 9 + 8] = numForm[i * 9 + 8];
+  }
+
+  if (overflow64)
+    fprintf(stderr, "Error: formula count exceeds 64 bits; kernel launch sizes may be invalid.\n");
+  if (overflow128)
+    fprintf(stderr, "Error: d_numForm values after the first 128-bit overflow are invalid.\n");
+
   printMatrix(numForm.data(), max_size + 1, 9);
-  return {numForm, unaryForm, binaryForm};
+  return {numForm, unaryForm, binaryForm, numFormCumulative};
 }
 
 std::string MBAToString(const char *MBAFormula)
@@ -319,20 +375,32 @@ public:
 #endif
 
     // Number of formulas matrix
-    std::vector<uint64_t> numForm;
-    std::vector<uint64_t> unaryForm;
-    std::vector<uint64_t> binaryForm;
-    std::tie(numForm, unaryForm, binaryForm) = compute_n_formulas(max_size, mba.n_variables);
-    checkCuda(cudaMemcpyToSymbol(d_numForm, numForm.data(),
-                                 (max_size + 1) * 9 * sizeof(uint64_t)));
-    uint64_t transpose[max_size + 1];
+    std::vector<LARGE_UINT> numForm;
+    std::vector<LARGE_UINT> unaryForm;
+    std::vector<LARGE_UINT> binaryForm;
+    std::vector<LARGE_UINT> numFormCumulative;
+    std::tie(numForm, unaryForm, binaryForm, numFormCumulative) = compute_n_formulas(max_size, mba.n_variables);
+    checkCuda(cudaMemcpyToSymbol(d_numForm, numFormCumulative.data(),
+                                 (max_size + 1) * 9 * sizeof(LARGE_UINT)));
+    LARGE_UINT numFormUncum[max_size + 1];
     for (size_t i = 0; i < max_size + 1; i++)
     {
-      transpose[i] = numForm[i * 9 + 8];
+      numFormUncum[i] = numForm[i * 9 + 8];
     }
-    
-    checkCuda(cudaMemcpyToSymbol(d_numFormT, &transpose,
-                                 (max_size + 1) * sizeof(uint64_t)));
+    checkCuda(cudaMemcpyToSymbol(d_numFormUncum, numFormUncum,
+                                 (max_size + 1) * sizeof(LARGE_UINT)));
+
+    LARGE_UINT numFormP[max_size - 1][maxFormulaSize - 1];
+    for (size_t i = 1; i < max_size; i++)
+    {
+      for (size_t j =  i; j < max_size; j++)
+      {
+        numFormP[j - 1][i - 1] = numForm[i * 9 + 8] * numForm[(j - i) * 9 + 8];
+      }
+      
+    }
+    checkCuda(cudaMemcpyToSymbol(d_numFormP, &numFormP,
+                                 (maxFormulaSize - 1) * (max_size - 1) * sizeof(LARGE_UINT)));
 
     // Memory allocation for the potential solution
     char *d_res;
@@ -340,9 +408,9 @@ public:
     checkCuda(cudaMemset(d_res, 0, maxFormulaSize * sizeof(char)));
     char res[maxFormulaSize] = {0};
 
-    uint64_t offset;
-    uint64_t N, U, B;
-    uint64_t blockSize;
+    LARGE_UINT offset;
+    LARGE_UINT N, U, B;
+    LARGE_UINT blockSize;
     bool stop = false;
     for (int formula_size = 1; formula_size < max_size && !stop;
          ++formula_size)
@@ -357,7 +425,7 @@ public:
         U = unaryForm[formula_size * 9 + i];
         B = binaryForm[formula_size * 9 + i];
 
-        blockSize = cuda::ceil_div(N - U / 2 - B / 5, 1024);
+        blockSize = cuda::ceil_div(N - U / 2 -  4 * B / 5, 1024);
 #ifndef MEASUREMENT_MODE
         fprintf(
             stderr,
@@ -447,7 +515,7 @@ int main(int argc, char *argv[])
       std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
           .count();
   double time_s = (double)duration / 1e6;
-  fprintf(stderr, "\nRunning Time: %f s", (double)duration * 0.000001);
+  fprintf(stderr, "\nRunning Time: %f s,", (double)duration * 0.000001);
 #endif
 
   std::cout << file_name << "," << output << "," << time_s << std::endl;

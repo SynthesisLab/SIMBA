@@ -1,12 +1,13 @@
 #!/bin/bash
+set -e
 
 echo "Building VFB..."
-cd vfb && make && cd ..
+make -C vfb
 cp vfb/build/full-cache ./vfb_exe
 echo "Done!"
 
 echo "Building SIMBA..."
-cd simba && make && cd ..
+make -C simba
 cp simba/simba_nocache ./simba_exe
 cp simba/simba_rtid ./simba_rtid_exe
 echo "Done!"

@@ -3,8 +3,10 @@ NVCC := nvcc
 CXX  := g++
 
 # Flags
+# Set CUDA_ARCH to match your GPU, e.g. `make CUDA_ARCH=sm_80`.
+CUDA_ARCH ?= sm_90
 DEPFLAGS := -MMD -MP
-NVCC_FLAGS := -O2 -std=c++20 -Iincludes --extended-lambda
+NVCC_FLAGS := -O2 -std=c++20 -Iincludes --extended-lambda -arch=$(CUDA_ARCH)
 CXX_FLAGS  := -O2 -std=c++20 -Wall -Wextra
 
 CPPS := $(wildcard src/*.cpp)

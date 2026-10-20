@@ -15,7 +15,7 @@ Create the executables, the instances and run all the experiments with
 SIMBA and the VFB algorithm are both written in C++ and Cuda.
 Building the executables requires `CUDA` (tested with version `13.2.78`), `g++` (tested with version `Ubuntu 13.3.0-6ubuntu2~24.04.1`) and `GNU Make` (tested with version `4.3`).
 The source codes for VFB and SIMBA are available in the respective directories (`vfb/` and `simba/`).
-Note that the VFB Makefile targets compute capability 9.0 (`-arch=sm_90` in `vfb/Makefile`); adjust this flag to match your GPU.
+Both Makefiles target compute capability 9.0 by default (`sm_90`); set the `CUDA_ARCH` environment variable to match your GPU, e.g. `CUDA_ARCH=sm_80 ./build_all.sh`.
 We use cvc5's Python bindings, through a script given in the `cvc5/` directory.
 
 We use Python scripts to generate MBA expressions and sample them at random values to generate MBA learning instances. These scripts are available in the `scripts/` folder.

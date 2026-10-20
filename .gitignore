@@ -1,6 +1,21 @@
 *.o
 *.d
 
+# Build outputs
+simba/simba_nocache
+simba/simba_rtid
+/simba_exe
+/simba_rtid_exe
+/vfb_exe
+
+# Generated instances and results
+/formulas.txt
+/instances/
+/res_*.csv
+
+# macOS
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

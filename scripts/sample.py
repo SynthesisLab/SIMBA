@@ -1,8 +1,9 @@
 import argparse
 import json
-from pathlib import Path
 import re
-from typing import Any, Callable, Iterator
+from collections.abc import Callable, Iterator
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
